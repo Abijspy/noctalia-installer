@@ -17,7 +17,7 @@ jobs:
     name: Shell and configs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Bash syntax and shellcheck
         run: |
@@ -39,7 +39,7 @@ jobs:
     name: Installer runs (stubbed distros)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run install.sh end to end against stubbed package managers
         run: sudo tests/sim/run.sh
 
@@ -48,13 +48,17 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install niri, Sway and Noctalia
         run: pacman -Syu --noconfirm --needed niri sway noctalia
       - name: niri validate
         run: niri validate -c configs/niri/config.kdl
       - name: sway -C
-        run: sway -C -c configs/sway/config
+        # The packaged binary carries file capabilities a container can't
+        # grant; a plain copy of it checks configs just the same.
+        run: |
+          install -m 755 "$(command -v sway)" /tmp/sway
+          XDG_RUNTIME_DIR=/tmp /tmp/sway -C -c configs/sway/config
       - name: noctalia config validate
         # Noctalia may want a running session for some checks; don't fail the build on that.
         continue-on-error: true
@@ -68,7 +72,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Compare tag with install.sh and README
         run: |
           v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' install.sh)"

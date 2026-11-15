@@ -24,7 +24,10 @@ TH="$(getent passwd tester | cut -d: -f6)"
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS + 1)); echo "  ok   $*"; }
-bad()  { FAIL=$((FAIL + 1)); echo "  FAIL $*"; }
+bad()  {
+    FAIL=$((FAIL + 1)); echo "  FAIL $*"
+    [[ -n ${OUT:-} ]] && tail -n 8 <<< "$OUT" | sed 's/^/       | /'
+}
 check() { local d=$1; shift; if "$@"; then ok "$d"; else bad "$d"; fi; }
 
 reset() {
@@ -98,6 +101,14 @@ check "installs nothing" bash -c "! grep -qF '[pacman] -Syu' '$LOGF'"
 check "writes nothing" test ! -e "$TH/.config/niri/config.kdl"
 
 echo "== Every distribution"
+# Gentoo looks packages up in the ebuild tree; give it a minimal fake one.
+FAKE_PORTAGE=0
+if [[ ! -d /var/db/repos ]]; then
+    FAKE_PORTAGE=1
+    for a in gui-apps/noctalia gui-wm/niri x11-terms/alacritty; do
+        mkdir -p "/var/db/repos/gentoo/$a"; touch "/var/db/repos/gentoo/$a/${a#*/}-1.ebuild"
+    done
+fi
 for os in fedora tumbleweed trixie resolute alpine chimera gentoo solus void nixos; do
     reset
     extra=("--compositors=niri,sway,labwc")
@@ -108,6 +119,7 @@ for os in fedora tumbleweed trixie resolute alpine chimera gentoo solus void nix
     check "$os: niri config" test -s "$TH/.config/niri/config.kdl"
 done
 
+[[ $FAKE_PORTAGE -eq 1 ]] && rm -rf /var/db/repos
 [[ -n ${KEEP:-} ]] && { echo "$OUT" > /tmp/sim-last.txt; }
 reset; rm -rf "$BIN" "$LOGF"
 echo
