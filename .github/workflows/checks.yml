@@ -55,10 +55,12 @@ jobs:
         run: niri validate -c configs/niri/config.kdl
       - name: sway -C
         # The packaged binary carries file capabilities a container can't
-        # grant; a plain copy of it checks configs just the same.
+        # grant, so use a plain copy; sway -C still starts a backend, so
+        # give it wlroots' headless one (no seat or GPU in a container).
         run: |
           install -m 755 "$(command -v sway)" /tmp/sway
-          XDG_RUNTIME_DIR=/tmp /tmp/sway -C -c configs/sway/config
+          XDG_RUNTIME_DIR=/tmp WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
+            /tmp/sway -C -c configs/sway/config
       - name: noctalia config validate
         # Noctalia may want a running session for some checks; don't fail the build on that.
         continue-on-error: true
