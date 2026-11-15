@@ -1,0 +1,5 @@
+ID=linuxmint
+ID_LIKE="ubuntu debian"
+VERSION_CODENAME=zara
+UBUNTU_CODENAME=resolute
+PRETTY_NAME="Linux Mint 23"

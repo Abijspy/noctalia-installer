@@ -1,0 +1,49 @@
+name: Bug report
+description: The installer failed, or a config doesn't work as described
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Installer version
+      description: Output of `./install.sh --version`, or the tag in the command you ran
+      placeholder: noctalia-installer 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: Arch Linux, Fedora 44, Debian 13…
+    validations:
+      required: true
+  - type: dropdown
+    id: compositor
+    attributes:
+      label: Compositor(s)
+      multiple: true
+      options: [niri, Hyprland, Sway, SwayFX, Scroll, Mango, Labwc, Umbriel, KDE Plasma, "Installer itself (before any compositor starts)"]
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver
+      placeholder: AMD, Intel, NVIDIA (proprietary / open / nouveau)
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: ./install.sh --compositors=niri,hyprland
+  - type: textarea
+    id: log
+    attributes:
+      label: Install log
+      description: The end of `/tmp/noctalia-niri-install.log` (or all of it). Remove anything private.
+      render: text

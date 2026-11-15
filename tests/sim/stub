@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Stand-in for package managers, systemctl, git/makepkg and the desktop
+# tools, so install.sh can run end to end without touching the system.
+#   STUB_REPO     file listing the packages that "exist" (one per line)
+#   STUB_LOG      every call is appended here
+#   STUB_BIN      the directory of stub links (AUR helpers appear there once "built")
+#   STUB_ENABLED  space-separated units systemctl reports as enabled
+n=$(basename "$0")
+has() { grep -qx -- "$1" "${STUB_REPO:-/dev/null}"; }
+last() { local a; for a; do :; done; echo "$a"; }
+echo "[$n] $*" >> "${STUB_LOG:-/dev/null}"
+case $n in
+    dnf)        if [[ $* == *repoquery* ]]; then p=$(last "$@"); has "$p" && echo "$p"; fi ;;
+    zypper)     if [[ $* == *search* ]]; then has "$(last "$@")" || exit 104; fi ;;
+    apt-cache)  has "$(last "$@")" || exit 100 ;;
+    xbps-query) has "$(last "$@")" || exit 2 ;;
+    apk)        if [[ $1 == search ]]; then p=$(last "$@"); has "$p" && echo "$p-1.0-r0"; fi ;;
+    eopkg)      if [[ $1 == info ]]; then has "$2" || exit 1; fi ;;
+    portageq)   echo amd64 ;;
+    pacman)     [[ $1 == -Qq ]] && exit 1 ;;   # -Si: every Arch package "exists"
+    dpkg)       [[ $1 == --print-architecture ]] && echo amd64 ;;
+    curl|wget)  for ((i = 1; i <= $#; i++)); do
+                    [[ ${!i} == -o || ${!i} == -qO ]] && { j=$((i + 1)); echo stub > "${!j}"; }
+                done ;;
+    git)        mkdir -p "$(last "$@")" ;;
+    makepkg)    case $PWD in
+                    */paru|*/yay) h=$(basename "$PWD"); ln -sf "$(readlink -f "$0")" "$STUB_BIN/$h" ;;
+                esac ;;
+    systemctl)  if [[ $1 == is-enabled ]]; then
+                    u=$(last "$@"); [[ " ${STUB_ENABLED:-} " == *" $u "* ]] || exit 1
+                fi ;;
+    sway)       [[ $1 == --version ]] && echo "sway version 1.11" ;;
+    mango)      [[ $1 == -v ]] && echo "mango 0.18.5" ;;
+esac
+exit 0

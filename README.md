@@ -4,21 +4,28 @@ Ready-made configs and an installer for the [Noctalia v5](https://docs.noctalia.
 
 ![The installer's welcome screen](docs/screenshots/welcome.png)
 
+[![Checks](https://github.com/Abijspy/noctalia-installer/actions/workflows/checks.yml/badge.svg)](https://github.com/Abijspy/noctalia-installer/actions/workflows/checks.yml)
+
 ## Quick install
 
 Works on a **fresh minimal install**, straight from the TTY and even as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/v1.0.0/install.sh | bash
 ```
+
+This runs a tagged release, and the configs it downloads come from the same release, so a change on `main` can't break your install halfway. To see what it would do first, add `-s -- --dry-run` after `bash`.
 
 Or from a clone:
 
 ```bash
-git clone https://github.com/Abijspy/noctalia-installer.git
+git clone --branch v1.0.0 https://github.com/Abijspy/noctalia-installer.git
 cd noctalia-installer
+./install.sh --dry-run   # optional: list every package and file, change nothing
 ./install.sh
 ```
+
+Changed your mind? `./install.sh --uninstall` puts your old configs and login screen back (see [Undoing the install](#undoing-the-install)).
 
 ## The installer
 
@@ -60,7 +67,7 @@ On other distributions, compositors your distribution doesn't package are greyed
 1. **Welcome:** shows whether it found a laptop and an existing login manager.
 2. **User:** only when run as root. Pick an existing user or create a new one. A new user is added to `wheel`, and `sudo` is installed and enabled for that group.
 3. **Desktop:** choose one or more compositors. Press Enter to take the highlighted one, or tick several with Space first. Each one gets its own config, and with Noctalia Greeter you pick between them at login.
-4. **Extras:** Noctalia Greeter, the [bar preset](#noctalia-bar-preset), [wallpapers](#wallpapers) (then pick the default one), overview type-to-launch, Noctalia's polkit agent, file manager and browser, and the lid-close lock (laptops only, and only with niri, Sway or Scroll). Then the **AUR helper**:
+4. **Extras:** Noctalia Greeter, the [bar preset](#noctalia-bar-preset), [wallpapers](#wallpapers) (then pick the default one), overview type-to-launch, Noctalia's polkit agent, file manager and browser, the lid-close lock (laptops only, and only with niri, Sway or Scroll), [desktop services](#desktop-services-and-nvidia) and, when an NVIDIA driver is loaded, the [NVIDIA tweaks](#desktop-services-and-nvidia). Then the **AUR helper**:
    - keep yay or paru if one is already installed, install **paru** or **yay**, or skip it;
    - Scroll and Umbriel are only in the AUR, so they need a helper.
 5. **Apps:**
@@ -258,6 +265,34 @@ The browser screen shows which source will be used, and Mod+B launches whatever 
   ```
   It then runs `noctalia-greeter-apply-appearance --setup-system` and enables `greetd`. Your old login manager is disabled but not stopped, so your current session keeps running. The switch happens when you reboot.
 
+## Desktop services and NVIDIA
+
+Noctalia's network, Bluetooth and power widgets need system services that a minimal install doesn't run. On Arch, Fedora, openSUSE, Debian and Ubuntu the installer installs and enables, for the next boot:
+
+- **NetworkManager**, unless another network tool is already enabled (systemd-networkd, ConnMan, netctl, wicked);
+- **Bluetooth** (`bluez`), when the machine has a Bluetooth adapter;
+- **power-profiles-daemon** on laptops, unless TLP, auto-cpufreq or tuned is enabled.
+
+Services that are already enabled are left alone. Untick *Desktop services* or use `--no-services` to skip all of this.
+
+When NVIDIA's own driver is loaded (not nouveau), the installer also:
+
+- turns on kernel modesetting (`/etc/modprobe.d/90-noctalia-nvidia.conf`), which Wayland compositors need, unless it's already on. Rebuild your initramfs and reboot afterwards; the installer tells you the command;
+- with niri, adds the application profile from niri's NVIDIA page that stops the driver holding on to video memory (`/etc/nvidia/nvidia-application-profiles-rc.d/50-noctalia-niri-vram.json`).
+
+Untick *NVIDIA tweaks* or use `--no-nvidia-fix` to skip them. If an NVIDIA card is found without NVIDIA's driver, the installer only adds a note.
+
+## Undoing the install
+
+Every run keeps a record in `~/.local/state/noctalia-installer/manifest`. `./install.sh --uninstall` reads it and:
+
+- puts back each config file as it was before the first install (or removes it, if it didn't exist), and moves `hyprland.conf` back;
+- restores `/etc/greetd/config.toml`, disables greetd if the installer enabled it, and re-enables your old login manager;
+- disables the services the installer enabled, removes the lid and NVIDIA files, and undoes the KDE blur and window rule;
+- removes the bundled wallpapers.
+
+Packages stay installed; it prints the list so you can remove them yourself. It shows everything before changing anything and asks to confirm (`--yes` skips the question). Run it as the same user, or as root with `--user=NAME`. Installs made before v1.0.0 have no record and can't be undone this way.
+
 ## Options
 
 | Flag | Effect |
@@ -276,6 +311,13 @@ The browser screen shows which source will be used, and Mod+B launches whatever 
 | `--lid-fix` | Lock the screen before suspend when the lid closes (niri, Sway, Scroll) |
 | `--stock-bar` | Keep Noctalia's default bar instead of the bar preset |
 | `--wallpaper=…` | `moonrise` `aurora` `dunes` `waves` `nebula` `orbit`, or `none` for Noctalia's own |
+| `--no-services` | Don't enable NetworkManager, Bluetooth or power profiles |
+| `--no-nvidia-fix` | Don't apply the NVIDIA tweaks |
+| `--dry-run` | Go through the choices, then list every package, file and system change, and stop. Needs no root |
+| `--uninstall` | Undo what the installer changed (see [Undoing the install](#undoing-the-install)) |
+| `--version` | Print the installer version |
+
+Set `NOCTALIA_INSTALLER_REF=main` to make a downloaded installer fetch configs from `main` instead of its own release.
 
 Example of a fully unattended install as root:
 
@@ -298,3 +340,7 @@ niri validate
 The configs launch `alacritty`, `nautilus` and `firefox` and use the `us` keyboard layout; change those lines to suit you.
 
 On SwayFX, also append `configs/sway/swayfx-effects` to `~/.config/sway/config` for blur, corners and shadows. Scroll has its own config in `configs/scroll/config`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md): how the configs fit together, the tests, and how releases are cut.

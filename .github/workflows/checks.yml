@@ -1,0 +1,76 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1"   # weekly: catch upstream compositor changes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Shell and configs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bash syntax and shellcheck
+        run: |
+          bash -n install.sh
+          shellcheck -S warning install.sh tests/sim/run.sh tests/sim/stub tools/release.sh
+
+      - name: Install Python checkers
+        run: pip install lupa ckdl
+
+      - name: Fetch Mango and Umbriel sources
+        run: |
+          git clone --depth 1 https://github.com/mangowm/mango.git /tmp/mango
+          git clone --depth 1 https://github.com/noctalia-dev/umbriel.git /tmp/umbriel
+
+      - name: Check every config
+        run: python3 tests/check-configs.py --mango-src /tmp/mango --umbriel-src /tmp/umbriel
+
+  simulate:
+    name: Installer runs (stubbed distros)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run install.sh end to end against stubbed package managers
+        run: sudo tests/sim/run.sh
+
+  arch:
+    name: Validate with the real tools (Arch)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install niri, Sway and Noctalia
+        run: pacman -Syu --noconfirm --needed niri sway noctalia
+      - name: niri validate
+        run: niri validate -c configs/niri/config.kdl
+      - name: sway -C
+        run: sway -C -c configs/sway/config
+      - name: noctalia config validate
+        # Noctalia may want a running session for some checks; don't fail the build on that.
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/xdg/noctalia
+          cp configs/noctalia/*.toml /tmp/xdg/noctalia/
+          XDG_CONFIG_HOME=/tmp/xdg noctalia config validate
+
+  release:
+    name: Tag matches VERSION
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare tag with install.sh and README
+        run: |
+          v="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' install.sh)"
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME but install.sh says VERSION=$v"; exit 1; }
+          grep -q "noctalia-installer/v$v/install.sh" README.md || { echo "README install command doesn't use v$v"; exit 1; }

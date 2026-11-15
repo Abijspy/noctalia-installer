@@ -31,13 +31,23 @@
 #    --stock-bar                      # keep Noctalia's default bar (no bar preset)
 #    --wallpaper=moonrise|aurora|dunes|waves|nebula|orbit|none
 #                                     # bundled wallpaper to use (none: Noctalia's own)
+#    --no-services                    # don't enable NetworkManager, Bluetooth, power profiles
+#    --no-nvidia-fix                  # don't apply the NVIDIA tweaks (modeset, niri VRAM)
+#    --dry-run                        # show what would be installed and written; change nothing
+#    --uninstall                      # undo what this installer did (restores your backups)
+#    --version                        # print the installer version
 #
-#  Straight from GitHub:
-#    curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/main/install.sh | bash
+#  Straight from GitHub (a tagged release, so the script and its
+#  configs always match):
+#    curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/v1.0.0/install.sh | bash
 # =====================================================================
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/Abijspy/noctalia-installer/main"
+VERSION="1.0.0"
+# Configs come from the same release as this script. Override with
+# NOCTALIA_INSTALLER_REF=main to test unreleased changes.
+REPO_REF="${NOCTALIA_INSTALLER_REF:-v$VERSION}"
+REPO_RAW="https://raw.githubusercontent.com/Abijspy/noctalia-installer/$REPO_REF"
 GREETD_CONF="/etc/greetd/config.toml"
 LOG="/tmp/noctalia-niri-install.log"
 
@@ -62,8 +72,12 @@ KB_LAYOUT="us"
 COMPOSITORS="niri"
 COMPS_FROM_FLAG=0
 AUR_HELPER="auto"
+SERVICES=1
+NVIDIA_FIX=1
+DRY_RUN=0
+UNINSTALL=0
 
-usage() { sed -n '3,37p' "${BASH_SOURCE[0]:-$0}" 2>/dev/null | sed 's/^# \{0,1\}//'; }
+usage() { awk 'NR > 2 && /^# =====/ { exit } NR > 2' "${BASH_SOURCE[0]:-$0}" 2>/dev/null | sed 's/^# \{0,1\}//'; }
 
 for arg in "$@"; do
     case "$arg" in
@@ -81,6 +95,11 @@ for arg in "$@"; do
         --layout=*)        KB_LAYOUT="${arg#*=}" ;;
         --compositors=*)   COMPOSITORS="${arg#*=}"; COMPS_FROM_FLAG=1 ;;
         --aur-helper=*)    AUR_HELPER="${arg#*=}" ;;
+        --no-services)     SERVICES=0 ;;
+        --no-nvidia-fix)   NVIDIA_FIX=0 ;;
+        --dry-run)         DRY_RUN=1 ;;
+        --uninstall)       UNINSTALL=1 ;;
+        --version)         echo "noctalia-installer $VERSION"; exit 0 ;;
         -h|--help)         usage; exit 0 ;;
         *) echo "Unknown option: $arg (see --help)"; exit 1 ;;
     esac
@@ -210,6 +229,7 @@ fm_scan() {  # look up every file manager's package once
         if [[ $CONFIGS_ONLY -eq 1 ]]; then FM_PKG[$id]=${cands%% *}; continue; fi
         for c in $cands; do pm_has "$c" && { FM_PKG[$id]=$c; break; }; done
     done
+    true   # a missing last candidate must not end the script under set -e
 }
 
 FLATPAK_BIN=/var/lib/flatpak/exports/bin
@@ -342,6 +362,12 @@ pkgs() {
         solus:fonts)       echo "noto-sans-ttf noto-emoji" ;;
         *:sudo)            echo sudo ;;
         *:curl)            echo curl ;;
+        arch:networkmanager) echo networkmanager ;;
+        debian:networkmanager) echo network-manager ;;
+        *:networkmanager)  echo NetworkManager ;;
+        arch:bluetooth)    echo "bluez bluez-utils" ;;
+        *:bluetooth)       echo bluez ;;
+        *:power)           echo power-profiles-daemon ;;
         *)                 echo "$g" ;;   # apps share their names across distributions
     esac
 }
@@ -550,6 +576,24 @@ fi
 
 IS_LAPTOP=0
 compgen -G "/sys/class/power_supply/BAT*" >/dev/null && IS_LAPTOP=1
+HAS_BT=0
+compgen -G "/sys/class/bluetooth/hci*" >/dev/null && HAS_BT=1
+# NVIDIA: a card (PCI vendor 0x10de, display class 0x03xxxx), and whether
+# NVIDIA's own driver is loaded (nouveau needs none of the tweaks).
+NVIDIA_GPU=0; NVIDIA_DRIVER=0
+for _d in /sys/bus/pci/devices/*; do
+    [[ $(cat "$_d/vendor" 2>/dev/null) == 0x10de && $(cat "$_d/class" 2>/dev/null) == 0x03* ]] && NVIDIA_GPU=1
+done
+[[ -e /proc/driver/nvidia/version || -d /sys/module/nvidia_drm ]] && NVIDIA_DRIVER=1
+# Test hooks (tests/sim): pretend to be different hardware.
+IS_LAPTOP=${NOCTALIA_TEST_LAPTOP:-$IS_LAPTOP}; HAS_BT=${NOCTALIA_TEST_BT:-$HAS_BT}
+NVIDIA_DRIVER=${NOCTALIA_TEST_NVIDIA:-$NVIDIA_DRIVER}; [[ $NVIDIA_DRIVER -eq 1 ]] && NVIDIA_GPU=1
+# Desktop services (NetworkManager, Bluetooth, power profiles) are enabled
+# on the systemd distributions the installer fully supports.
+SERVICES_DISTRO=0
+[[ $HAS_SYSTEMD -eq 1 && $CONFIGS_ONLY -eq 0 ]] && case $FAMILY in arch|fedora|opensuse|debian) SERVICES_DISTRO=1 ;; esac
+[[ $SERVICES_DISTRO -eq 1 ]] || SERVICES=0
+[[ $NVIDIA_DRIVER -eq 1 && $CONFIGS_ONLY -eq 0 ]] || NVIDIA_FIX=0
 
 CURRENT_DM="$(basename "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null)" 2>/dev/null || true)"
 [[ $CURRENT_DM == "display-manager.service" || $CURRENT_DM == "greetd.service" ]] && CURRENT_DM=""
@@ -557,8 +601,9 @@ CURRENT_DM="$(basename "$(readlink -f /etc/systemd/system/display-manager.servic
 HAVE_TTY=0
 { : </dev/tty >/dev/tty; } 2>/dev/null && HAVE_TTY=1
 
-if [[ $IS_ROOT -eq 0 && $CONFIGS_ONLY -eq 0 ]]; then
-    info "Administrator rights are needed to install packages."
+if [[ $IS_ROOT -eq 0 && $CONFIGS_ONLY -eq 0 && $DRY_RUN -eq 0 ]]; then
+    if [[ $UNINSTALL -eq 1 ]]; then info "Administrator rights are needed to undo system changes."
+    else info "Administrator rights are needed to install packages."; fi
     sudo -v </dev/tty || die "sudo authentication failed."
     ( while kill -0 $$ 2>/dev/null; do sudo -n true; sleep 45; done ) 2>/dev/null &
     KEEPALIVE_PID=$!
@@ -1049,6 +1094,8 @@ p_extras() {
         "File manager and browser|apps for Mod+E and Mod+B|apps"
     )
     [[ $IS_LAPTOP -eq 1 && $HAS_SYSTEMD -eq 1 && $CONFIGS_ONLY -eq 0 ]] && lid_supported && opts+=("Lid lock|lock before suspend on lid close|lid")
+    [[ $SERVICES_DISTRO -eq 1 ]] && opts+=("Desktop services|NetworkManager, Bluetooth, power profiles|services")
+    [[ $NVIDIA_DRIVER -eq 1 && $CONFIGS_ONLY -eq 0 ]] && opts+=("NVIDIA tweaks|modesetting and niri's VRAM fix|nvidia")
     [[ $INSTALL_GREETER -eq 1 ]] && ticked+="greeter "
     [[ $BAR_PRESET -eq 1 ]] && ticked+="bar "
     [[ $WALLPAPERS_ON -eq 1 ]] && ticked+="walls "
@@ -1056,17 +1103,19 @@ p_extras() {
     [[ $POLKIT_AGENT -eq 1 ]] && ticked+="polkit "
     [[ $INSTALL_APPS -eq 1 ]] && ticked+="apps "
     [[ $LID_FIX -eq 1 ]] && ticked+="lid "
+    [[ $SERVICES -eq 1 ]] && ticked+="services "
+    [[ $NVIDIA_FIX -eq 1 ]] && ticked+="nvidia "
     local sub="Noctalia, portals, audio, fonts and a terminal are always installed."
     [[ $CONFIGS_ONLY -eq 1 ]] && sub="Configs only: these settings go into the configs written."
     screen "Extras" "Choose your extras" "$sub"
     nav_footer "space" "toggle" "enter" "continue"
     checklist 9 "$ticked" 0 "${opts[@]}" || return 2
-    INSTALL_GREETER=0; TYPE_TO_LAUNCH=0; POLKIT_AGENT=0; INSTALL_APPS=0; LID_FIX=0; BAR_PRESET=0; WALLPAPERS_ON=0
+    INSTALL_GREETER=0; TYPE_TO_LAUNCH=0; POLKIT_AGENT=0; INSTALL_APPS=0; LID_FIX=0; BAR_PRESET=0; WALLPAPERS_ON=0; SERVICES=0; NVIDIA_FIX=0
     local v
     for v in $ANSWER; do
         case $v in
             greeter) INSTALL_GREETER=1 ;; launch) TYPE_TO_LAUNCH=1 ;; polkit) POLKIT_AGENT=1 ;; bar) BAR_PRESET=1 ;; walls) WALLPAPERS_ON=1 ;;
-            apps) INSTALL_APPS=1 ;; lid) LID_FIX=1 ;;
+            apps) INSTALL_APPS=1 ;; lid) LID_FIX=1 ;; services) SERVICES=1 ;; nvidia) NVIDIA_FIX=1 ;;
         esac
     done
 }
@@ -1219,6 +1268,13 @@ p_review() {
     [[ $POLKIT_AGENT -eq 1 ]] && pa=$yes_chip || pa=$off
     [[ $LID_FIX -eq 1 ]] && ll=$yes_chip || ll=$off
     local bp; [[ $BAR_PRESET -eq 1 ]] && bp=$yes_chip || bp=$off
+    local sys_txt="${D}services${R} " nv
+    if [[ $SERVICES_DISTRO -eq 0 ]]; then sys_txt+="${D}n/a${R}"
+    elif [[ $SERVICES -eq 1 ]]; then sys_txt+=$yes_chip; else sys_txt+=$off; fi
+    if [[ $NVIDIA_DRIVER -eq 1 && $CONFIGS_ONLY -eq 0 ]]; then
+        [[ $NVIDIA_FIX -eq 1 ]] && nv=$yes_chip || nv=$off
+        sys_txt+="  ${D}NVIDIA tweaks${R} ${nv}"
+    fi
     local wp_txt="${D}Noctalia's default${R}"; [[ $WALLPAPERS_ON -eq 1 ]] && wp_txt="${WALLPAPER^} ${D}(+5 more in ~/Pictures/Wallpapers)${R}"
     card 8 \
         "${D}User        ${R}${X}${user_txt}${R}" \
@@ -1229,10 +1285,13 @@ p_review() {
         "${D}Keyboard    ${R}${X}${KB_LAYOUT}${R}" \
         "${D}Wallpaper   ${R}${X}${wp_txt}${R}" \
         "${D}Login       ${R}${X}${greeter_txt}${R}" \
-        "${D}Extras      ${R}${D}bar${R} ${bp}  ${D}type-to-launch${R} ${tl}  ${D}polkit${R} ${pa}  ${D}lid${R} ${ll}"
+        "${D}Extras      ${R}${D}bar${R} ${bp}  ${D}type-to-launch${R} ${tl}  ${D}polkit${R} ${pa}  ${D}lid${R} ${ll}" \
+        "${D}System      ${R}${sys_txt}"
     nav_footer "enter" "select"
-    menu 19 install \
-        "Install now|start the installation|install" \
+    local go="Install now|start the installation|install"
+    [[ $DRY_RUN -eq 1 ]] && go="Show the plan|dry run: list what would change, change nothing|install"
+    menu 20 install \
+        "$go" \
         "Change my choices|back to the compositor list|change" \
         "Quit|leave without changing anything|quit" || return 2
     case $ANSWER in
@@ -1302,6 +1361,8 @@ plain_decisions() {
     if [[ $AUR_HELPER == none ]] && needs_aur; then die "$(aur_comp_names) is only in the AUR: use --aur-helper=paru or yay."; fi
     info "Compositors: $(comp_names) | AUR helper: $AUR_HELPER"
     info "User: $TARGET_USER | apps: $([[ $INSTALL_APPS -eq 1 ]] && echo "$TERM_APP $FM_APP $BROWSER_APP" || echo "$TERM_APP") | layout: $KB_LAYOUT"
+    [[ $SERVICES_DISTRO -eq 1 ]] && info "Desktop services: $([[ $SERVICES -eq 1 ]] && echo on || echo off)$([[ $NVIDIA_FIX -eq 1 ]] && echo " | NVIDIA tweaks: on")"
+    [[ $DRY_RUN -eq 1 ]] && return 0
     if [[ $CONFIGS_ONLY -eq 1 ]]; then
         info "Configs only on $FAMILY_LABEL: $FAMILY_NOTE"
         plain_ask "Write the configs now?" y || die "Aborted."
@@ -1315,6 +1376,105 @@ plain_decisions() {
 # =====================================================================
 # Step list for the install screen (id|label), built from the choices.
 INSTALL_STEPS=()
+# Packages for the current choices -> PK_ESSENTIAL, PK_OPTIONAL, PK_BACKPORTS.
+# Essential ones must exist; optional ones are skipped when missing.
+collect_packages() {
+    PK_ESSENTIAL=(); PK_OPTIONAL=(); PK_BACKPORTS=()
+    local c g p cp line
+    addp() { local -n _arr=$1; local _t=(); read -ra _t <<< "$2"; _arr+=("${_t[@]}"); }   # addp ARRAY "pkg pkg"
+    addp PK_ESSENTIAL "$(pkgs noctalia)"
+    for c in "${COMPS[@]}"; do
+        cp="$(comp_repo_pkgs "$c")"
+        [[ -z $cp ]] && continue
+        PK_ESSENTIAL+=("${cp%% *}")
+        [[ $cp == *" "* ]] && addp PK_OPTIONAL "${cp#* }"
+    done
+    for g in portal-gtk keyring audio media fonts; do addp PK_OPTIONAL "$(pkgs "$g")"; done
+    addp PK_ESSENTIAL "$(pkgs "$TERM_APP")"   # always: Mod+Return is your way in
+    if [[ $INSTALL_APPS -eq 1 && $FM_APP != none ]]; then
+        fm_scan; [[ -n ${FM_PKG[$FM_APP]} ]] && PK_OPTIONAL+=("${FM_PKG[$FM_APP]}")
+    fi
+    [[ $INSTALL_GREETER -eq 1 ]] && addp PK_ESSENTIAL "$(pkgs greeter)"
+    if [[ $INSTALL_GREETER -eq 1 || $POLKIT_AGENT -eq 1 ]]; then addp PK_OPTIONAL "$(pkgs polkit)"; fi
+    if [[ $AUR_HELPER != none ]]; then PK_OPTIONAL+=(base-devel git); [[ $IS_ROOT -eq 1 ]] && PK_OPTIONAL+=(sudo); fi
+    while IFS=$'\t' read -r _ line; do addp PK_OPTIONAL "$line"; done < <(service_plan)
+
+    # Debian trixie: the greeter and Umbriel come from trixie-backports.
+    if [[ $FAMILY == debian && $DEB_SUITE == trixie ]]; then
+        local keep=()
+        for p in "${PK_ESSENTIAL[@]}"; do
+            case $p in noctalia-greeter|umbriel|xdg-desktop-portal-umbriel) PK_BACKPORTS+=("$p") ;; *) keep+=("$p") ;; esac
+        done
+        PK_ESSENTIAL=("${keep[@]}")
+        for p in "${PK_OPTIONAL[@]}"; do [[ $p == xdg-desktop-portal-umbriel ]] && PK_BACKPORTS+=("$p"); done
+    fi
+    true
+}
+
+# Services worth enabling: prints "UNIT<TAB>packages" lines. Skips anything
+# already enabled and anything that would fight another tool.
+service_plan() {
+    [[ $SERVICES -eq 1 ]] || return 0
+    local u net=1
+    for u in NetworkManager systemd-networkd connman netctl wicked; do unit_enabled "$u.service" && net=0; done
+    [[ $net -eq 1 ]] && printf 'NetworkManager.service\t%s\n' "$(pkgs networkmanager)"
+    if [[ $HAS_BT -eq 1 ]] && ! unit_enabled bluetooth.service; then
+        printf 'bluetooth.service\t%s\n' "$(pkgs bluetooth)"
+    fi
+    if [[ $IS_LAPTOP -eq 1 ]]; then
+        local power=1
+        for u in power-profiles-daemon tuned tuned-ppd tlp auto-cpufreq; do unit_enabled "$u.service" && power=0; done
+        [[ $power -eq 1 ]] && printf 'power-profiles-daemon.service\t%s\n' "$(pkgs power)"
+    fi
+    true
+}
+
+# NVIDIA tweaks: prints "FILE<TAB>what it does" for each file it would write.
+NV_MODESET_FILE=/etc/modprobe.d/90-noctalia-nvidia.conf
+NV_PROFILE_FILE=/etc/nvidia/nvidia-application-profiles-rc.d/50-noctalia-niri-vram.json
+nvidia_plan() {
+    [[ $NVIDIA_FIX -eq 1 ]] || return 0
+    if [[ $(cat /sys/module/nvidia_drm/parameters/modeset 2>/dev/null) != Y ]]; then
+        printf '%s\t%s\n' "$NV_MODESET_FILE" "turn on NVIDIA kernel modesetting (Wayland needs it)"
+    fi
+    if has_comp niri && ! grep -rqs GLVidHeapReuseRatio /etc/nvidia/nvidia-application-profiles-rc.d/; then
+        printf '%s\t%s\n' "$NV_PROFILE_FILE" "stop niri holding on to video memory (niri's NVIDIA fix)"
+    fi
+    true
+}
+apply_nvidia() {
+    local f what
+    while IFS=$'\t' read -r f what; do
+        as_root mkdir -p "$(dirname "$f")"
+        case $f in
+            "$NV_MODESET_FILE")
+                printf '# Written by noctalia-installer: Wayland compositors need modesetting\noptions nvidia_drm modeset=1\n' \
+                    | as_root tee "$f" >/dev/null
+                warn "NVIDIA modesetting turned on. Rebuild your initramfs (e.g. sudo mkinitcpio -P, sudo dracut -f or sudo update-initramfs -u) and reboot." ;;
+            "$NV_PROFILE_FILE")
+                cat <<'JSON' | as_root tee "$f" >/dev/null
+{
+    "rules": [
+        {
+            "pattern": { "feature": "procname", "matches": "niri" },
+            "profile": "Limit Free Buffer Pool On Wayland Compositors"
+        }
+    ],
+    "profiles": [
+        {
+            "name": "Limit Free Buffer Pool On Wayland Compositors",
+            "settings": [ { "key": "GLVidHeapReuseRatio", "value": 0 } ]
+        }
+    ]
+}
+JSON
+                ;;
+        esac
+        rec sysfile "$f"
+        ok "NVIDIA: $what ($f)"
+    done < <(nvidia_plan)
+}
+
 build_install_steps() {
     INSTALL_STEPS=()
     [[ $CREATE_USER -eq 1 ]] && INSTALL_STEPS+=("user|Create user $TARGET_USER")
@@ -1330,7 +1490,182 @@ build_install_steps() {
     INSTALL_STEPS+=("files|Write $(comp_names | cut -c1-40) config" "check|Validate configs")
     [[ $LID_FIX -eq 1 ]] && INSTALL_STEPS+=("lid|Configure lid close")
     if [[ $INSTALL_GREETER -eq 1 ]]; then INSTALL_STEPS+=("greeter|Set up Noctalia Greeter" "dm|Enable the login screen"); fi
+    [[ $SERVICES -eq 1 ]] && INSTALL_STEPS+=("services|Enable desktop services")
+    [[ $NVIDIA_FIX -eq 1 ]] && INSTALL_STEPS+=("nvidia|Apply NVIDIA tweaks")
     return 0
+}
+
+# ---------- --dry-run: show the plan, change nothing ----------
+planned_files() {  # every file the install would write, one per line
+    local c
+    for c in "${COMPS[@]}"; do
+        case $c in
+            niri)     echo "$CONFIG_HOME/niri/config.kdl" ;;
+            hyprland) echo "$CONFIG_HOME/hypr/hyprland.lua" ;;
+            sway|scroll) echo "$CONFIG_HOME/$c/config" ;;
+            mango)    echo "$CONFIG_HOME/mango/config.conf" ;;
+            labwc)    printf '%s\n' "$CONFIG_HOME/labwc/rc.xml" "$CONFIG_HOME/labwc/autostart" "$CONFIG_HOME/labwc/environment" ;;
+            umbriel)  echo "$CONFIG_HOME/umbriel/config.toml" ;;
+            kde)      echo "$CONFIG_HOME/autostart/noctalia.desktop" ;;
+        esac
+    done
+    echo "$CONFIG_HOME/noctalia/10-installer.toml"
+    [[ $BAR_PRESET -eq 1 ]] && echo "$CONFIG_HOME/noctalia/20-bar.toml"
+    if [[ $WALLPAPERS_ON -eq 1 ]]; then
+        echo "$CONFIG_HOME/noctalia/30-wallpaper.toml"
+        echo "$TARGET_HOME/Pictures/Wallpapers/noctalia-*.jpg (${#WALLPAPER_TABLE[@]} wallpapers)"
+    fi
+    true
+}
+
+print_plan() {
+    local home
+    if [[ $CREATE_USER -eq 1 ]]; then home="/home/$TARGET_USER"
+    else home="$(getent passwd "$TARGET_USER" | cut -d: -f6)"; fi
+    TARGET_HOME=$home
+    if [[ $IS_ROOT -eq 1 || $CREATE_USER -eq 1 ]]; then CONFIG_HOME="$home/.config"
+    else CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"; fi
+
+    echo
+    info "Dry run on $FAMILY_LABEL: nothing has been changed. The installer would:"
+    [[ $CREATE_USER -eq 1 ]] && echo "  • create the user $TARGET_USER (wheel group, sudo enabled)"
+    if [[ $CONFIGS_ONLY -eq 1 ]]; then
+        echo "  • install no packages ($FAMILY_NOTE)"
+    else
+        [[ $FAMILY != arch ]] && echo "  • add the Noctalia package repository for $FAMILY_LABEL"
+        collect_packages
+        echo "  • install: ${PK_ESSENTIAL[*]}"
+        echo "  • install if available: ${PK_OPTIONAL[*]}"
+        (( ${#PK_BACKPORTS[@]} )) && echo "  • install from trixie-backports: ${PK_BACKPORTS[*]}"
+        [[ $AUR_HELPER != none && $AUR_HELPER != "$EXISTING_HELPER" ]] && echo "  • build $AUR_HELPER from the AUR"
+        if needs_aur; then
+            local c a=(); for c in "${COMPS[@]}"; do read -ra _t <<< "$(comp_aur_pkgs "$c")"; a+=("${_t[@]}"); done
+            echo "  • build from the AUR: ${a[*]}"
+        fi
+        if [[ $INSTALL_APPS -eq 1 && $BROWSER_APP != none ]]; then
+            echo "  • install $(browser_field "$BROWSER_APP" 2) ($(browser_source "$BROWSER_APP"))"
+        fi
+    fi
+    echo "  • write these files (an existing file is backed up next to itself first):"
+    local f
+    while IFS= read -r f; do
+        if [[ -e ${f%% *} ]]; then echo "      $f   (exists: backed up)"; else echo "      $f"; fi
+    done < <(planned_files)
+    has_comp hyprland && [[ -f $CONFIG_HOME/hypr/hyprland.conf ]] && echo "  • move $CONFIG_HOME/hypr/hyprland.conf aside (Hyprland then reads hyprland.lua)"
+    has_comp kde && echo "  • turn on KWin's blur and add a KWin rule opening Noctalia settings maximized"
+    [[ $LID_FIX -eq 1 ]] && echo "  • write /etc/systemd/logind.conf.d/10-noctalia-lid.conf (the compositor handles the lid)"
+    if [[ $INSTALL_GREETER -eq 1 ]]; then
+        echo "  • point greetd ($GREETD_CONF, backed up) at Noctalia Greeter"
+        if [[ -n $CURRENT_DM && $SWITCH_DM -eq 1 ]]; then echo "  • disable $CURRENT_DM and enable greetd"
+        elif [[ -z $CURRENT_DM ]]; then echo "  • enable greetd"; fi
+    fi
+    local unit what
+    while IFS=$'\t' read -r unit _; do echo "  • enable $unit"; done < <(service_plan)
+    while IFS=$'\t' read -r f what; do echo "  • write $f: $what"; done < <(nvidia_plan)
+    echo "  • keep a record in $home/.local/state/noctalia-installer/manifest, so --uninstall can undo it"
+    echo
+    echo "Run the same command without --dry-run to install."
+}
+
+# ---------- --uninstall: undo the recorded changes ----------
+do_uninstall() {
+    if [[ $IS_ROOT -eq 1 && -z $TARGET_USER ]]; then
+        TARGET_USER="${SUDO_USER:-}"
+        if [[ -z $TARGET_USER || $TARGET_USER == root ]]; then
+            local found=() m
+            for m in /home/*/.local/state/noctalia-installer/manifest; do [[ -f $m ]] && found+=("$(stat -c %U "$m")"); done
+            (( ${#found[@]} == 1 )) || die "Pass --user=NAME (install records found for: ${found[*]:-nobody})."
+            TARGET_USER=${found[0]}
+        fi
+    elif [[ $IS_ROOT -eq 0 ]]; then
+        TARGET_USER="$(id -un)"
+    fi
+    id "$TARGET_USER" &>/dev/null || die "User '$TARGET_USER' doesn't exist."
+    TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+    local m="$TARGET_HOME/.local/state/noctalia-installer/manifest"
+    [[ -s $m ]] || die "No install record for $TARGET_USER ($m). Only installs from v1.0.0 on can be undone."
+
+    # Keep the first record of each thing: the state before the first install.
+    local -A seen=()
+    local lines=() kind a b key
+    while IFS=$'\t' read -r kind a b; do
+        case $kind in
+            file|moved|sysfile) key="$kind:$a" ;;
+            greetd|kde_blur|kde_rule) key=$kind ;;
+            dm_disabled|enabled) key="$kind:$a" ;;
+            *) continue ;;
+        esac
+        [[ -n ${seen[$key]:-} ]] && continue
+        seen[$key]=1
+        lines+=("$kind"$'\t'"$a"$'\t'"$b")
+    done < "$m"
+    local pk; pk="$(awk -F'\t' '$1 == "packages" { print $2 }' "$m" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | paste -sd' ' -)"
+
+    info "This puts back what the installer changed for $TARGET_USER:"
+    local l
+    for l in "${lines[@]}"; do
+        IFS=$'\t' read -r kind a b <<< "$l"
+        case $kind in
+            file)    if [[ $b == - ]]; then echo "  • remove $a"; else echo "  • restore $a from $(basename "$b")"; fi ;;
+            moved)   echo "  • move $(basename "$b") back to $a" ;;
+            sysfile) echo "  • remove $a" ;;
+            greetd)  [[ $a != - ]] && echo "  • restore $GREETD_CONF from its backup" ;;
+            dm_disabled) echo "  • re-enable $a" ;;
+            enabled) echo "  • disable $a" ;;
+            kde_blur) echo "  • set KWin's blur back to how it was" ;;
+            kde_rule) echo "  • remove the KWin rule for Noctalia settings" ;;
+        esac
+    done
+    [[ -n $pk ]] && echo "  Packages stay installed. Remove them yourself if you like: $pk"
+    if [[ $ASSUME_YES -eq 0 ]]; then
+        local reply; read -r -p "Undo these changes? [y/N] " reply </dev/tty || reply=""
+        [[ $reply =~ ^[Yy] ]] || die "Nothing changed."
+    fi
+
+    local greetd_enabled_by_us=0
+    for l in "${lines[@]}"; do [[ $l == enabled$'\t'greetd.service$'\t'* ]] && greetd_enabled_by_us=1; done
+    for l in "${lines[@]}"; do
+        IFS=$'\t' read -r kind a b <<< "$l"
+        case $kind in
+            file)
+                if [[ $b == - ]]; then rm -f "$a" && ok "Removed $a"
+                elif [[ -f $b ]]; then cp -p "$b" "$a" && ok "Restored $a"
+                else warn "Backup $b is gone; left $a as it is"; fi ;;
+            moved)
+                if [[ -f $b && ! -e $a ]]; then mv "$b" "$a" && ok "Moved $a back"; else warn "Couldn't move $b back to $a"; fi ;;
+            sysfile) as_root rm -f "$a" && ok "Removed $a" ;;
+            greetd)
+                # The first greetd record holds the backup path in field 2.
+                if [[ $a != - ]] && as_root test -f "$a"; then as_root cp -p "$a" "$GREETD_CONF" && ok "Restored $GREETD_CONF"; fi ;;
+            dm_disabled)
+                [[ $greetd_enabled_by_us -eq 1 ]] && { as_root systemctl disable greetd.service || true; }
+                as_root systemctl enable "$a" && ok "Re-enabled $a (log in with it after a reboot)" ;;
+            enabled) as_root systemctl disable "$a" && ok "Disabled $a" ;;
+            kde_blur|kde_rule) undo_kde "$kind" "$a" ;;
+        esac
+    done
+    mv "$m" "$m.undone.$(date +%Y%m%d-%H%M%S)"
+    ok "Done. Reboot (or log out) to finish."
+}
+undo_kde() {  # undo_kde KIND VALUE
+    local kw kr
+    kw="$(command -v kwriteconfig6 || command -v kwriteconfig5)" || return 0
+    kr="$(command -v kreadconfig6 || command -v kreadconfig5)" || return 0
+    if [[ $1 == kde_blur ]]; then
+        if [[ -n $2 ]]; then as_user "$kw" --file kwinrc --group Plugins --key blurEnabled "$2"
+        else as_user "$kw" --file kwinrc --group Plugins --key blurEnabled --delete; fi
+        ok "KWin blur set back"
+        return 0
+    fi
+    local rules k
+    rules="$(as_user "$kr" --file kwinrulesrc --group General --key rules 2>/dev/null || true)"
+    rules="$(tr ',' '\n' <<< "$rules" | grep -vx noctalia-settings | paste -sd, -)"
+    as_user "$kw" --file kwinrulesrc --group General --key rules "$rules"
+    as_user "$kw" --file kwinrulesrc --group General --key count "$(tr ',' '\n' <<< "$rules" | grep -c . || true)"
+    for k in Description wmclass wmclassmatch maximizehoriz maximizehorizrule maximizevert maximizevertrule; do
+        as_user "$kw" --file kwinrulesrc --group noctalia-settings --key "$k" --delete
+    done
+    ok "Removed the KWin rule for Noctalia settings"
 }
 
 progress() {  # progress PCT STEP_ID "message"
@@ -1369,10 +1704,37 @@ put_user_file() {  # put_user_file SRC DEST
     else install -m 644 "$1" "$2"; fi
 }
 
-backup_if_exists() {
+LAST_BACKUP="-"
+backup_if_exists() {  # sets LAST_BACKUP to the backup's path, or "-"
+    LAST_BACKUP="-"
     [[ -f $1 ]] || return 0
-    local b; b="$1.bak.$(date +%Y%m%d-%H%M%S)"
+    local b n=1; b="$1.bak.$(date +%Y%m%d-%H%M%S)"
+    while [[ -e $b ]]; do n=$((n + 1)); b="$1.bak.$(date +%Y%m%d-%H%M%S)-$n"; done   # two runs in one second
     cp -p "$1" "$b"; ok "Backed up $1 -> $b"
+    LAST_BACKUP="$b"
+}
+
+# ---------- install record (for --uninstall) ----------
+# One tab-separated line per change, oldest first, kept across runs in
+# ~/.local/state/noctalia-installer/manifest. --uninstall undoes the first
+# record of each thing, which is the state before the first install.
+MANIFEST=""
+manifest_open() {
+    local d="$TARGET_HOME/.local/state/noctalia-installer"
+    mk_user_dir "$TARGET_HOME/.local" "$TARGET_HOME/.local/state" "$d"
+    MANIFEST="$d/manifest"
+    [[ -f $MANIFEST ]] || { : > "$MANIFEST"; [[ $IS_ROOT -eq 1 ]] && chown "$TARGET_USER:$TARGET_GROUP" "$MANIFEST"; }
+    true
+}
+rec() {  # rec KIND FIELD...
+    [[ -n $MANIFEST ]] || return 0
+    local IFS=$'\t'; printf '%s\n' "$*" >> "$MANIFEST"
+}
+unit_enabled() { [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-enabled --quiet "$1" 2>/dev/null; }
+enable_service() {  # enable_service UNIT — enable for next boot; record it if it was off
+    unit_enabled "$1" && return 0
+    if as_root systemctl enable "$1"; then rec enabled "$1"; ok "Enabled $1"
+    else warn "Couldn't enable $1"; return 1; fi
 }
 
 # Set `key = "value"` inside [default_session] of greetd's config,
@@ -1443,6 +1805,7 @@ place_user_file() {  # place_user_file SRC DEST — back up, then install for th
     mk_user_dir "$(dirname "$2")"
     backup_if_exists "$2"
     put_user_file "$1" "$2"
+    rec file "$2" "$LAST_BACKUP"
     ok "Wrote $2"
 }
 
@@ -1480,6 +1843,7 @@ kde_extras() {
     local kw kr rules
     kw="$(command -v kwriteconfig6 || command -v kwriteconfig5)" || return 0
     kr="$(command -v kreadconfig6 || command -v kreadconfig5)" || return 0
+    rec kde_blur "$(as_user "$kr" --file kwinrc --group Plugins --key blurEnabled 2>/dev/null || true)"
     as_user "$kw" --file kwinrc --group Plugins --key blurEnabled true
     rules="$(as_user "$kr" --file kwinrulesrc --group General --key rules 2>/dev/null)" || rules=""
     if [[ ,$rules, != *,noctalia-settings,* ]]; then
@@ -1494,6 +1858,7 @@ kde_extras() {
         rules="${rules:+$rules,}noctalia-settings"
         as_user "$kw" --file kwinrulesrc --group General --key rules "$rules"
         as_user "$kw" --file kwinrulesrc --group General --key count "$(tr ',' '\n' <<<"$rules" | grep -c .)"
+        rec kde_rule noctalia-settings
     fi
     ok "KDE Plasma: blur on, Noctalia settings open maximized"
 }
@@ -1514,7 +1879,9 @@ write_comp_config() {  # write_comp_config ID
             # Noctalia's Hyprland setup uses the Lua config; move an old
             # hyprland.conf aside (backed up) so it can't take over.
             if [[ -f $CONFIG_HOME/hypr/hyprland.conf ]]; then
-                mv "$CONFIG_HOME/hypr/hyprland.conf" "$CONFIG_HOME/hypr/hyprland.conf.bak.$(date +%Y%m%d-%H%M%S)"
+                local moved; moved="$CONFIG_HOME/hypr/hyprland.conf.bak.$(date +%Y%m%d-%H%M%S)"
+                mv "$CONFIG_HOME/hypr/hyprland.conf" "$moved"
+                rec moved "$CONFIG_HOME/hypr/hyprland.conf" "$moved"
                 warn "Moved your hyprland.conf aside (backup next to it); Hyprland now uses hyprland.lua."
             fi
             place_user_file "$w/hyprland.lua" "$CONFIG_HOME/hypr/hyprland.lua" ;;
@@ -1651,41 +2018,20 @@ run_steps() {
     if [[ $IS_ROOT -eq 1 ]]; then CONFIG_HOME="$TARGET_HOME/.config"
     else CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"; fi
     NOCTALIA_DIR="$CONFIG_HOME/noctalia"
+    manifest_open
+    rec run "$(date +%Y-%m-%dT%H:%M:%S)" "$VERSION" "${COMPS[*]}"
 
     # --- packages ---
-    addp() { local -n _arr=$1; local _t=(); read -ra _t <<< "$2"; _arr+=("${_t[@]}"); }   # addp ARRAY "pkg pkg"
     if [[ $CONFIGS_ONLY -eq 0 ]]; then
         if [[ $FAMILY != arch ]]; then
             run_long 3 8 repos "Adding the Noctalia repository for $FAMILY_LABEL…" setup_repos \
                 || die "Adding the repository failed — see $LOG"
         fi
 
-        local essential=() optional=() backports=() c g p
-        addp essential "$(pkgs noctalia)"
-        for c in "${COMPS[@]}"; do
-            local cp; cp="$(comp_repo_pkgs "$c")"
-            [[ -z $cp ]] && continue
-            essential+=("${cp%% *}")
-            [[ $cp == *" "* ]] && addp optional "${cp#* }"
-        done
-        for g in portal-gtk keyring audio media fonts; do addp optional "$(pkgs "$g")"; done
-        addp essential "$(pkgs "$TERM_APP")"   # always: Mod+Return is your way in
-        if [[ $INSTALL_APPS -eq 1 ]]; then
-            if [[ $FM_APP != none ]]; then fm_scan; [[ -n ${FM_PKG[$FM_APP]} ]] && optional+=("${FM_PKG[$FM_APP]}"); fi
-        fi
-        [[ $INSTALL_GREETER -eq 1 ]] && addp essential "$(pkgs greeter)"
-        if [[ $INSTALL_GREETER -eq 1 || $POLKIT_AGENT -eq 1 ]]; then addp optional "$(pkgs polkit)"; fi
-        if [[ $AUR_HELPER != none ]]; then optional+=(base-devel git); [[ $IS_ROOT -eq 1 ]] && optional+=(sudo); fi
-
-        # Debian trixie: the greeter and Umbriel come from trixie-backports.
-        if [[ $FAMILY == debian && $DEB_SUITE == trixie ]]; then
-            local keep=()
-            for p in "${essential[@]}"; do
-                case $p in noctalia-greeter|umbriel|xdg-desktop-portal-umbriel) backports+=("$p") ;; *) keep+=("$p") ;; esac
-            done
-            essential=("${keep[@]}")
-            for p in "${optional[@]}"; do [[ $p == xdg-desktop-portal-umbriel ]] && backports+=("$p"); done
-        fi
+        local essential=() optional=() backports=() p
+        collect_packages
+        essential=("${PK_ESSENTIAL[@]}"); optional=("${PK_OPTIONAL[@]}")
+        (( ${#PK_BACKPORTS[@]} )) && backports=("${PK_BACKPORTS[@]}")
 
         # Look every package up in the repositories: stop on a missing
         # essential one, skip (and report) missing optional ones.
@@ -1709,6 +2055,7 @@ run_steps() {
             as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -t trixie-backports "${backports[@]}" \
                 || die "Installing ${backports[*]} from trixie-backports failed — see $LOG"
         fi
+        rec packages "${install[*]} ${backports[*]}"
         ok "Packages installed"
     fi
 
@@ -1778,6 +2125,7 @@ run_steps() {
         for row in "${WALLPAPER_TABLE[@]}"; do
             id=${row%%|*}
             get_cfg "wallpapers/noctalia-$id.jpg" "$TMP_DIR/noctalia-$id.jpg"
+            [[ -e $wdir/noctalia-$id.jpg ]] || rec file "$wdir/noctalia-$id.jpg" -
             put_user_file "$TMP_DIR/noctalia-$id.jpg" "$wdir/noctalia-$id.jpg"
         done
         ok "Copied ${#WALLPAPER_TABLE[@]} wallpapers to $wdir"
@@ -1816,6 +2164,7 @@ run_steps() {
     if [[ $LID_FIX -eq 1 ]]; then
         progress 80 lid "Configuring lid close…"
         as_root mkdir -p /etc/systemd/logind.conf.d
+        as_root test -e /etc/systemd/logind.conf.d/10-noctalia-lid.conf || rec sysfile /etc/systemd/logind.conf.d/10-noctalia-lid.conf
         printf '[Login]\nHandleLidSwitch=ignore\nHandleLidSwitchExternalPower=ignore\n' \
             | as_root tee /etc/systemd/logind.conf.d/10-noctalia-lid.conf >/dev/null
         ok "Lid close is handled by the compositor and Noctalia (after reboot)"
@@ -1828,9 +2177,12 @@ run_steps() {
         [[ -x $session ]] || die "noctalia-greeter-session not found at $session"
         as_root mkdir -p /etc/greetd
         if as_root test -f "$GREETD_CONF"; then
-            as_root cp -p "$GREETD_CONF" "$GREETD_CONF.bak.$(date +%Y%m%d-%H%M%S)"
+            local gbak; gbak="$GREETD_CONF.bak.$(date +%Y%m%d-%H%M%S)"
+            as_root cp -p "$GREETD_CONF" "$gbak"
+            rec greetd "$gbak"
         else
             printf '[terminal]\nvt = 1\n\n[default_session]\n' | as_root tee "$GREETD_CONF" >/dev/null
+            rec greetd -
         fi
         local guser
         guser="$(as_root awk '/^\[default_session\]/{d=1;next} /^\[/{d=0} d && /^[[:space:]]*user[[:space:]]*=/{gsub(/.*=[[:space:]]*"|".*/,""); print; exit}' "$GREETD_CONF")"
@@ -1853,15 +2205,27 @@ run_steps() {
         progress 95 dm "Enabling the login screen…"
         if [[ -n $CURRENT_DM && $SWITCH_DM -eq 1 ]]; then
             as_root systemctl disable "$CURRENT_DM"
+            rec dm_disabled "$CURRENT_DM"
             ok "Disabled $CURRENT_DM"
         fi
         if [[ -z $CURRENT_DM || $SWITCH_DM -eq 1 ]]; then
-            as_root systemctl enable greetd.service
-            ok "greetd enabled"
+            enable_service greetd.service
             echo 1 > "$TMP_DIR/greeter_enabled"
         else
             warn "Kept $CURRENT_DM; greetd was not enabled (two login managers would conflict)."
         fi
+    fi
+
+    if [[ $SERVICES -eq 1 ]]; then
+        progress 97 services "Enabling desktop services…"
+        local unit
+        while IFS=$'\t' read -r unit _; do enable_service "$unit" || true; done < <(service_plan)
+    fi
+    if [[ $NVIDIA_FIX -eq 1 ]]; then
+        progress 98 nvidia "Applying NVIDIA tweaks…"
+        apply_nvidia
+    elif [[ $NVIDIA_GPU -eq 1 && $NVIDIA_DRIVER -eq 0 && $CONFIGS_ONLY -eq 0 ]]; then
+        warn "NVIDIA card found without NVIDIA's driver loaded. If the desktop is slow or blank, install your distribution's NVIDIA driver."
     fi
 
     if [[ $CONFIGS_ONLY -eq 1 ]]; then
@@ -1892,8 +2256,17 @@ render_install() {  # render_install PID
         for i in "${!INSTALL_STEPS[@]}"; do [[ ${INSTALL_STEPS[i]%%|*} == "$cur" ]] && cur_idx=$i; done
         [[ $cur == "done" ]] && cur_idx=${#INSTALL_STEPS[@]}
 
+        # Small terminals: show a window of steps around the current one,
+        # so the progress bar and log lines always fit above the footer.
+        local n=${#INSTALL_STEPS[@]} fit=$(( ROWS - 15 )) first=0 last
+        (( fit < 3 )) && fit=3
+        if (( n > fit )); then
+            first=$(( cur_idx - 2 )); (( first > n - fit )) && first=$(( n - fit )); (( first < 0 )) && first=0
+        fi
+        last=$(( first + (n < fit ? n : fit) - 1 ))
         row=9
         for i in "${!INSTALL_STEPS[@]}"; do
+            (( i < first || i > last )) && continue
             label="${INSTALL_STEPS[i]#*|}"
             if (( i < cur_idx )); then line="${T}${SYM_DONE}${R}  ${D}${label}${R}"
             elif (( i == cur_idx )); then
@@ -1907,10 +2280,13 @@ render_install() {  # render_install PID
         at $(( row + 1 )) 5
         out "${P}$(rep "$BAR_ON" "$fill")${R}${O}$(rep "$BAR_OFF" $(( w - fill )))${R} ${X}${B}$(printf '%3d%%' "$pct")${R}${EL}"
 
-        local lrow=$(( row + 3 ))
-        while IFS= read -r line; do
-            at "$lrow" 5; out "${D}${line}${R}${EL}"; lrow=$((lrow + 1))
-        done < <(log_tail 4)
+        local lrow=$(( row + 3 )) nlog
+        nlog=$(( ROWS - 1 - lrow )); (( nlog > 4 )) && nlog=4
+        if (( nlog > 0 )); then
+            while IFS= read -r line; do
+                at "$lrow" 5; out "${D}${line}${R}${EL}"; lrow=$((lrow + 1))
+            done < <(log_tail "$nlog")
+        fi
 
         [[ $running -eq 0 ]] && break
         frame=$((frame + 1)); sleep 0.15
@@ -1976,12 +2352,25 @@ scr_done() {
 # =====================================================================
 #  main
 # =====================================================================
-: > "$LOG"
+# Another user's log from an earlier run may be in the way.
+{ : > "$LOG"; } 2>/dev/null || LOG="$(mktemp /tmp/noctalia-install.XXXXXX.log)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
+
+if [[ $UNINSTALL -eq 1 ]]; then
+    UI=plain
+    do_uninstall
+    exit 0
+fi
 
 check_comp_availability
 init_ui
 if [[ $UI == tui ]]; then tui_decisions; else plain_decisions; fi
+
+if [[ $DRY_RUN -eq 1 ]]; then
+    [[ $UI == tui ]] && { ui_restore; UI=plain; }
+    print_plan
+    exit 0
+fi
 
 INSTALL_STARTED=1
 build_install_steps
