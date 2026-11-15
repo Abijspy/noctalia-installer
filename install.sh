@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =====================================================================
 #  Noctalia v5 desktop installer for Linux
-#  https://github.com/Abijspy/noctalia-niri-config-setup
+#  https://github.com/Abijspy/noctalia-installer
 #
 #  Sets up Noctalia on any compositor it supports: niri, Hyprland,
 #  Sway, Scroll, Mango, Labwc, Umbriel and KDE Plasma, on every
@@ -33,11 +33,11 @@
 #                                     # bundled wallpaper to use (none: Noctalia's own)
 #
 #  Straight from GitHub:
-#    curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-niri-config-setup/main/install.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/main/install.sh | bash
 # =====================================================================
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/Abijspy/noctalia-niri-config-setup/main"
+REPO_RAW="https://raw.githubusercontent.com/Abijspy/noctalia-installer/main"
 GREETD_CONF="/etc/greetd/config.toml"
 LOG="/tmp/noctalia-niri-install.log"
 
@@ -1754,7 +1754,7 @@ run_steps() {
 
     local toml="$TMP_DIR/10-installer.toml"
     {
-        echo "# Written by noctalia-niri-config-setup/install.sh"
+        echo "# Written by noctalia-installer/install.sh"
         echo "[shell]"
         if has_comp niri && [[ $TYPE_TO_LAUNCH -eq 1 ]]; then
             echo "niri_overview_type_to_launch_enabled = true"
@@ -1781,7 +1781,7 @@ run_steps() {
             put_user_file "$TMP_DIR/noctalia-$id.jpg" "$wdir/noctalia-$id.jpg"
         done
         ok "Copied ${#WALLPAPER_TABLE[@]} wallpapers to $wdir"
-        printf '# Written by noctalia-niri-config-setup/install.sh\n[wallpaper]\ndirectory = "%s"\n\n[wallpaper.default]\npath = "%s"\n' \
+        printf '# Written by noctalia-installer/install.sh\n[wallpaper]\ndirectory = "%s"\n\n[wallpaper.default]\npath = "%s"\n' \
             "$wdir" "$wdir/noctalia-$WALLPAPER.jpg" > "$TMP_DIR/30-wallpaper.toml"
         place_user_file "$TMP_DIR/30-wallpaper.toml" "$NOCTALIA_DIR/30-wallpaper.toml"
         if [[ -f $TARGET_HOME/.local/state/noctalia/settings.toml ]] && grep -q '^\[wallpaper' "$TARGET_HOME/.local/state/noctalia/settings.toml"; then

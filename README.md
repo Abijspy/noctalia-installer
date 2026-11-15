@@ -1,4 +1,4 @@
-# noctalia-niri-config-setup
+# noctalia-installer
 
 Ready-made configs and an installer for the [Noctalia v5](https://docs.noctalia.dev/noctalia/) shell, on every compositor Noctalia supports (**niri, Hyprland, Sway, Scroll, Mango, Labwc, Umbriel and KDE Plasma**) and every distribution Noctalia packages for (**Arch, Fedora, openSUSE, Debian/Ubuntu, Void, Alpine Edge, Chimera, Gentoo and Solus**). The installer uses Noctalia's own colors, and on Arch it can install the **yay** or **paru** AUR helper.
 
@@ -9,14 +9,14 @@ Ready-made configs and an installer for the [Noctalia v5](https://docs.noctalia.
 Works on a **fresh minimal install**, straight from the TTY and even as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-niri-config-setup/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/main/install.sh | bash
 ```
 
 Or from a clone:
 
 ```bash
-git clone https://github.com/Abijspy/noctalia-niri-config-setup.git
-cd noctalia-niri-config-setup
+git clone https://github.com/Abijspy/noctalia-installer.git
+cd noctalia-installer
 ./install.sh
 ```
 
