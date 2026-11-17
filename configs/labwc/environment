@@ -1,2 +1,5 @@
 # Labwc - ~/.config/labwc/environment
 XKB_DEFAULT_LAYOUT=us
+QT_QPA_PLATFORMTHEME=qt6ct
+XCURSOR_THEME=Adwaita
+XCURSOR_SIZE=24

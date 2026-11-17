@@ -12,6 +12,10 @@
 
 set $mod Mod4
 set $ipc noctalia msg
+# Sway can't set environment variables for the apps it starts, so the
+# shell and the app keys go through env: Qt apps take Noctalia's colours
+# through qt6ct.
+set $env env QT_QPA_PLATFORMTHEME=qt6ct
 
 # ---------------------------------------------------------------------
 # Input
@@ -33,6 +37,8 @@ input type:touchpad {
 input type:pointer {
     accel_profile flat
 }
+
+seat * xcursor_theme Adwaita 24
 
 focus_follows_mouse yes
 mouse_warping container
@@ -74,7 +80,7 @@ for_window [app_id="^nm-connection-editor$"] floating enable
 # ---------------------------------------------------------------------
 # Autostart Noctalia
 # ---------------------------------------------------------------------
-exec noctalia
+exec $env noctalia
 
 # ---------------------------------------------------------------------
 # Keybinds (same layout as the niri config)
@@ -99,9 +105,9 @@ bindsym --locked XF86AudioNext exec playerctl next
 bindsym --locked XF86AudioPrev exec playerctl previous
 
 # Apps
-bindsym $mod+Return exec alacritty
-bindsym $mod+e exec nautilus
-bindsym $mod+b exec firefox
+bindsym $mod+Return exec $env alacritty
+bindsym $mod+e exec $env nautilus
+bindsym $mod+b exec $env firefox
 
 # Windows
 bindsym $mod+q kill

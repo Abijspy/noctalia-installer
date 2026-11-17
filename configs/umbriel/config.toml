@@ -17,12 +17,17 @@ autostart = ["noctalia"]
 [environment]
 QT_QPA_PLATFORM = "wayland"
 ELECTRON_OZONE_PLATFORM_HINT = "auto"
+QT_QPA_PLATFORMTHEME = "qt6ct"   # Qt apps take Noctalia's colours through qt6ct
 
 [input.keyboard]
 layout = "us"
 numlock_toggle = true
 repeat_rate = 40
 repeat_delay = 300
+
+[input.cursor]
+theme = "Adwaita"
+size = 24
 
 [input.touchpad]
 tap = true

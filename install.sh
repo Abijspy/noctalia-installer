@@ -31,6 +31,18 @@
 #    --stock-bar                      # keep Noctalia's default bar (no bar preset)
 #    --wallpaper=moonrise|aurora|dunes|waves|nebula|orbit|none
 #                                     # bundled wallpaper to use (none: Noctalia's own)
+#    --theme=rose-pine|catppuccin|tokyo-night|gruvbox|nord|dracula|kanagawa|ayu|eldritch|noctalia|wallpaper
+#                                     # colour theme for Noctalia, window borders, apps and terminal
+#    --no-app-theme                   # leave GTK/Qt apps, icons and cursor alone
+#    --no-fonts                       # don't install Inter and JetBrains Mono Nerd Font
+#    --no-user-dirs                   # don't create Documents, Downloads, Music, …
+#    --flathub                        # install Flatpak and add Flathub
+#    --scale=auto|1|1.25|1.5|1.75|2|none
+#                                     # display scale (auto: per display, from its size); none: don't touch displays
+#    --variant=intl                   # keyboard layout variant(s), comma separated like --layout
+#    --switch-key=alt-shift|ctrl-shift|caps|ralt|menu
+#                                     # key that switches between layouts (with two or more)
+#    --caps=normal|escape|ctrl|swap   # what Caps Lock does
 #    --no-services                    # don't enable NetworkManager, Bluetooth, power profiles
 #    --no-nvidia-fix                  # don't apply the NVIDIA tweaks (modeset, niri VRAM)
 #    --dry-run                        # show what would be installed and written; change nothing
@@ -74,6 +86,15 @@ COMPS_FROM_FLAG=0
 AUR_HELPER="auto"
 SERVICES=1
 NVIDIA_FIX=1
+COLOR_THEME="rose-pine"
+DARK_APPS=1
+FONTS=1
+USER_DIRS=1
+FLATHUB=0
+SCALE="auto"
+KB_VARIANT=""
+KB_SWITCH="alt-shift"
+KB_CAPS="normal"
 DRY_RUN=0
 UNINSTALL=0
 
@@ -95,6 +116,15 @@ for arg in "$@"; do
         --layout=*)        KB_LAYOUT="${arg#*=}" ;;
         --compositors=*)   COMPOSITORS="${arg#*=}"; COMPS_FROM_FLAG=1 ;;
         --aur-helper=*)    AUR_HELPER="${arg#*=}" ;;
+        --theme=*)         COLOR_THEME="${arg#*=}" ;;
+        --no-app-theme)    DARK_APPS=0 ;;
+        --no-fonts)        FONTS=0 ;;
+        --no-user-dirs)    USER_DIRS=0 ;;
+        --flathub)         FLATHUB=1 ;;
+        --scale=*)         SCALE="${arg#*=}" ;;
+        --variant=*)       KB_VARIANT="${arg#*=}" ;;
+        --switch-key=*)    KB_SWITCH="${arg#*=}" ;;
+        --caps=*)          KB_CAPS="${arg#*=}" ;;
         --no-services)     SERVICES=0 ;;
         --no-nvidia-fix)   NVIDIA_FIX=0 ;;
         --dry-run)         DRY_RUN=1 ;;
@@ -116,6 +146,27 @@ check_opt browser      "$BROWSER_APP" firefox librewolf brave mullvad tor ungoog
 [[ $KB_LAYOUT =~ ^[a-z]{2,}(,[a-z]{2,})*$ ]] || { echo "Invalid --layout=$KB_LAYOUT (e.g. us or us,de)"; exit 1; }
 check_opt aur-helper   "$AUR_HELPER"  auto paru yay none
 check_opt wallpaper    "$WALLPAPER"   moonrise aurora dunes waves nebula orbit none
+check_opt theme        "$COLOR_THEME" rose-pine catppuccin tokyo-night gruvbox nord dracula kanagawa ayu eldritch noctalia wallpaper
+check_opt scale        "$SCALE"       auto 1 1.25 1.5 1.75 2 none
+check_opt switch-key   "$KB_SWITCH"   alt-shift ctrl-shift caps ralt menu
+check_opt caps         "$KB_CAPS"     normal escape ctrl swap
+[[ $KB_VARIANT =~ ^[a-z0-9_]*(,[a-z0-9_]*)*$ ]] || { echo "Invalid --variant=$KB_VARIANT (e.g. intl or intl,)"; exit 1; }
+
+# Colour themes: id | Noctalia's palette name | menu label | description
+THEME_TABLE=(
+    "rose-pine|Rosé Pine|Rose Pine|soft purple and rose · matches the configs"
+    "catppuccin|Catppuccin|Catppuccin|pastel mauve on dark blue-grey"
+    "tokyo-night|Tokyo-Night|Tokyo Night|deep blue with violet accents"
+    "gruvbox|Gruvbox|Gruvbox|warm retro browns and oranges"
+    "nord|Nord|Nord|cool arctic blues"
+    "dracula|Dracula|Dracula|purple and pink"
+    "kanagawa|Kanagawa|Kanagawa|ink-wash blues and autumn colours"
+    "ayu|Ayu|Ayu|dark with warm orange accents"
+    "eldritch|Eldritch|Eldritch|neon teal and green"
+    "noctalia|Noctalia|Noctalia|Noctalia's own palette"
+    "wallpaper||From your wallpaper|generated from the wallpaper, updates with it"
+)
+theme_field() { local r; for r in "${THEME_TABLE[@]}"; do [[ ${r%%|*} == "$1" ]] && { cut -d'|' -f"$2" <<< "$r"; return; }; done; }
 WALLPAPERS_ON=1; [[ $WALLPAPER == none ]] && { WALLPAPERS_ON=0; WALLPAPER=moonrise; }
 
 # Bundled wallpapers (configs/wallpapers/noctalia-<id>.jpg): id | description
@@ -338,6 +389,11 @@ pkgs() {
             thunar) echo xfce-base/thunar ;;             dolphin) echo kde-apps/dolphin ;;
             nemo) echo gnome-extra/nemo ;;               firefox) echo www-client/firefox-bin ;;
             chromium) echo www-client/chromium ;;
+            gtk-theme) echo x11-themes/adw-gtk3 ;;       icons) echo x11-themes/papirus-icon-theme ;;
+            qtct) echo x11-misc/qt6ct ;;                 cursor) echo x11-themes/adwaita-icon-theme ;;
+            dconf) echo gnome-base/dconf ;;              ui-font) echo media-fonts/inter ;;
+            user-dirs) echo x11-misc/xdg-user-dirs ;;    flatpak) echo sys-apps/flatpak ;;
+            xz) echo app-arch/xz-utils ;;                wlr-randr) echo gui-apps/wlr-randr ;;
             *) echo "" ;;
         esac
         return
@@ -368,6 +424,28 @@ pkgs() {
         arch:bluetooth)    echo "bluez bluez-utils" ;;
         *:bluetooth)       echo bluez ;;
         *:power)           echo power-profiles-daemon ;;
+        arch:gtk-theme)    echo adw-gtk-theme ;;
+        fedora:gtk-theme)  echo adw-gtk3-theme ;;
+        *:gtk-theme)       echo adw-gtk3 ;;
+        *:icons)           echo papirus-icon-theme ;;
+        *:qtct)            echo qt6ct ;;
+        arch:cursor)       echo adwaita-cursors ;;
+        fedora:cursor)     echo adwaita-cursor-theme ;;
+        *:cursor)          echo adwaita-icon-theme ;;
+        debian:dconf)      echo "dconf-gsettings-backend libglib2.0-bin" ;;
+        *:dconf)           echo dconf ;;
+        arch:ui-font)      echo inter-font ;;
+        fedora:ui-font)    echo rsms-inter-fonts ;;
+        opensuse:ui-font)  echo inter-fonts ;;
+        debian:ui-font)    echo fonts-inter ;;
+        *:ui-font)         echo font-inter ;;
+        arch:nerd-font)    echo ttf-jetbrains-mono-nerd ;;
+        *:nerd-font)       echo "" ;;   # downloaded from the Nerd Fonts release instead
+        *:user-dirs)       echo xdg-user-dirs ;;
+        *:flatpak)         echo flatpak ;;
+        debian:xz)         echo xz-utils ;;
+        *:xz)              echo xz ;;
+        *:wlr-randr)       echo wlr-randr ;;
         *)                 echo "$g" ;;   # apps share their names across distributions
     esac
 }
@@ -588,6 +666,58 @@ done
 # Test hooks (tests/sim): pretend to be different hardware.
 IS_LAPTOP=${NOCTALIA_TEST_LAPTOP:-$IS_LAPTOP}; HAS_BT=${NOCTALIA_TEST_BT:-$HAS_BT}
 NVIDIA_DRIVER=${NOCTALIA_TEST_NVIDIA:-$NVIDIA_DRIVER}; [[ $NVIDIA_DRIVER -eq 1 ]] && NVIDIA_GPU=1
+# Displays: connector name, native size, highest refresh at that size (from
+# the EDID) and a suggested scale, read from /sys/class/drm.
+# Entries: "NAME|WIDTH|HEIGHT|REFRESH_mHz|SCALE"
+OUTPUTS=()
+_edid_dtd() {  # one 18-byte detailed timing at offset $1 of _EB; updates _BEST for _W x _H
+    local o=$1 pc ha hb va vb r
+    pc=$(( _EB[o] + _EB[o + 1] * 256 )); (( pc == 0 )) && return 1
+    (( _EB[o + 17] & 128 )) && return 0   # interlaced
+    ha=$(( _EB[o + 2] + ((_EB[o + 4] >> 4) << 8) )); hb=$(( _EB[o + 3] + ((_EB[o + 4] & 15) << 8) ))
+    va=$(( _EB[o + 5] + ((_EB[o + 7] >> 4) << 8) )); vb=$(( _EB[o + 6] + ((_EB[o + 7] & 15) << 8) ))
+    if (( ha == _W && va == _H && (ha + hb) * (va + vb) > 0 )); then
+        r=$(( pc * 10000000 / ((ha + hb) * (va + vb)) ))   # mHz
+        (( r > _BEST )) && _BEST=$r
+    fi
+    return 0
+}
+edid_info() {  # edid_info FILE WIDTH HEIGHT -> "WIDTH_CM REFRESH_mHz"
+    local -a _EB; local _W=$2 _H=$3 _BEST=0 off k base d
+    mapfile -t _EB < <(od -An -v -tu1 "$1" 2>/dev/null | tr -s ' ' '\n' | grep -v '^$')
+    (( ${#_EB[@]} >= 128 )) || return 1
+    for off in 54 72 90 108; do _edid_dtd "$off" || true; done
+    for (( k = 1; k <= _EB[126]; k++ )); do   # CTA-861 extension blocks list more timings
+        base=$(( 128 * k )); (( ${#_EB[@]} >= base + 128 )) || break
+        (( _EB[base] == 2 )) || continue
+        d=${_EB[base + 2]}; (( d >= 4 )) || continue
+        for (( off = base + d; off + 18 <= base + 127; off += 18 )); do _edid_dtd "$off" || break; done
+    done
+    echo "${_EB[21]} $_BEST"
+}
+suggest_scale() {  # suggest_scale WIDTH_PX WIDTH_CM IS_LAPTOP_PANEL
+    local dpi
+    (( $2 > 0 )) || { echo 1; return; }
+    dpi=$(( $1 * 254 / ($2 * 100) ))
+    (( $3 )) && dpi=$(( dpi * 85 / 100 ))   # a laptop panel sits closer to your eyes
+    if (( dpi < 125 )); then echo 1; elif (( dpi < 155 )); then echo 1.25; elif (( dpi < 185 )); then echo 1.5
+    elif (( dpi < 215 )); then echo 1.75; else echo 2; fi
+}
+detect_outputs() {
+    local root=${NOCTALIA_TEST_DRM:-/sys/class/drm} d name mode w h wcm r
+    for d in "$root"/card*-*; do
+        [[ -f $d/status && $(< "$d/status") == connected ]] || continue
+        name=${d##*/}; name=${name#card*-}
+        mode="$(head -n1 "$d/modes" 2>/dev/null)"
+        [[ $mode =~ ^([0-9]+)x([0-9]+) ]] || continue
+        w=${BASH_REMATCH[1]}; h=${BASH_REMATCH[2]}; wcm=0; r=0
+        [[ -s $d/edid ]] && { read -r wcm r < <(edid_info "$d/edid" "$w" "$h") || true; }
+        OUTPUTS+=("$name|$w|$h|${r:-0}|$(suggest_scale "$w" "${wcm:-0}" "$([[ $name == eDP* || $name == LVDS* ]] && echo 1 || echo 0)")")
+    done
+    true
+}
+detect_outputs
+
 # Desktop services (NetworkManager, Bluetooth, power profiles) are enabled
 # on the systemd distributions the installer fully supports.
 SERVICES_DISTRO=0
@@ -701,7 +831,7 @@ STEPS=()
 build_steps() {
     STEPS=(Welcome)
     [[ $IS_ROOT -eq 1 ]] && STEPS+=(User)
-    STEPS+=(Desktop Extras Apps Keyboard Review Install)
+    STEPS+=(Desktop Extras Apps Hardware Review Install)
 }
 
 header() {  # header CURRENT_STEP_NAME
@@ -1210,10 +1340,112 @@ p_browser() {
     BROWSER_APP=$ANSWER
 }
 
+p_theme() {
+    local opts=() row id name label desc
+    for row in "${THEME_TABLE[@]}"; do
+        IFS='|' read -r id name label desc <<< "$row"
+        [[ $id == wallpaper && $WALLPAPERS_ON -eq 0 ]] && desc="colours generated from Noctalia's default wallpaper"
+        opts+=("$label|$desc|$id")
+    done
+    screen "Extras" "Colour theme" "Noctalia, window borders, apps and the terminal. Change it later in Settings."
+    nav_footer "enter" "select"
+    menu 9 "$COLOR_THEME" "${opts[@]}" || return 2
+    COLOR_THEME=$ANSWER
+}
+p_look() {
+    local opts=(
+        "App theme|dark GTK and Qt apps in the theme's colours · icons · cursor|apptheme"
+        "Fonts|Inter for the interface · JetBrains Mono Nerd Font|fonts"
+        "Folders|Documents, Downloads, Music, Pictures, Videos…|dirs"
+    ) ticked=""
+    [[ $CONFIGS_ONLY -eq 0 ]] && opts+=("Flathub|Flatpak apps from flathub.org|flathub")
+    [[ $DARK_APPS -eq 1 ]] && ticked+="apptheme "
+    [[ $FONTS -eq 1 ]] && ticked+="fonts "
+    [[ $USER_DIRS -eq 1 ]] && ticked+="dirs "
+    [[ $FLATHUB -eq 1 ]] && ticked+="flathub "
+    screen "Extras" "Finishing touches" "So apps match the desktop from the first login."
+    nav_footer "space" "toggle" "enter" "continue"
+    checklist 9 "$ticked" 0 "${opts[@]}" || return 2
+    DARK_APPS=0; FONTS=0; USER_DIRS=0; FLATHUB=0
+    local v
+    for v in $ANSWER; do
+        case $v in apptheme) DARK_APPS=1 ;; fonts) FONTS=1 ;; dirs) USER_DIRS=1 ;; flathub) FLATHUB=1 ;; esac
+    done
+}
+switch_label() {
+    case $KB_SWITCH in alt-shift) echo "Alt+Shift" ;; ctrl-shift) echo "Ctrl+Shift" ;; caps) echo "Caps Lock" ;;
+        ralt) echo "Right Alt" ;; menu) echo "Menu key" ;; esac
+}
+caps_label() {
+    if [[ $KB_LAYOUT == *,* && $KB_SWITCH == caps ]]; then echo "switches layouts"; return; fi
+    case $KB_CAPS in normal) echo "Caps Lock" ;; escape) echo "Escape" ;; ctrl) echo "Ctrl" ;; swap) echo "swapped with Escape" ;; esac
+}
+p_kbopts() {
+    local errmsg="" cur="done"
+    while true; do
+        local items=("Variant|${KB_VARIANT:-default} · e.g. intl, dvorak, colemak|variant")
+        [[ $KB_LAYOUT == *,* ]] && items+=("Switch layouts|$(switch_label)|switch")
+        items+=("Caps Lock|$(caps_label)|caps" "Continue|keyboard: $(kb_summary)|done")
+        screen "Hardware" "Keyboard options" "Layouts: $KB_LAYOUT. Enter changes an option."
+        [[ -n $errmsg ]] && err_line "$errmsg"; errmsg=""
+        nav_footer "enter" "change"
+        menu 9 "$cur" "${items[@]}" || return 2
+        cur=$ANSWER
+        case $ANSWER in
+            done) return 0 ;;
+            variant)
+                screen "Hardware" "Layout variant" "One per layout, comma separated (intl, or dvorak,). Empty: the default."
+                footer "enter" "save" "$BKSP_KEY" "back (when empty)" "esc" "quit"
+                if text_input 9 "$KB_VARIANT" "default"; then
+                    if [[ $ANSWER =~ ^[a-z0-9_]*(,[a-z0-9_]*)*$ ]]; then KB_VARIANT=$ANSWER
+                    else errmsg="'$ANSWER' doesn't look like an xkb variant."; fi
+                fi ;;
+            switch)
+                screen "Hardware" "Switch layouts with" "Super+Space is taken by Noctalia's launcher."
+                nav_footer "enter" "select"
+                menu 9 "$KB_SWITCH" \
+                    "Alt+Shift|the common choice|alt-shift" \
+                    "Ctrl+Shift|like Windows|ctrl-shift" \
+                    "Caps Lock|Caps Lock then only switches|caps" \
+                    "Right Alt|loses AltGr for special characters|ralt" \
+                    "Menu key|the key next to Right Ctrl|menu" && KB_SWITCH=$ANSWER ;;
+            caps)
+                if [[ $KB_LAYOUT == *,* && $KB_SWITCH == caps ]]; then errmsg="Caps Lock switches layouts; pick another switch key first."; continue; fi
+                screen "Hardware" "Caps Lock" "What the Caps Lock key does."
+                nav_footer "enter" "select"
+                menu 9 "$KB_CAPS" \
+                    "Caps Lock|unchanged|normal" \
+                    "Escape|handy in Vim and terminals|escape" \
+                    "Ctrl|an easy-to-reach Control key|ctrl" \
+                    "Swap with Escape|Caps is Escape, Escape is Caps|swap" && KB_CAPS=$ANSWER ;;
+        esac
+    done
+}
+p_display() {
+    (( ${#OUTPUTS[@]} )) || return 3
+    local row name w h r sc lines=() hz
+    for row in "${OUTPUTS[@]}"; do
+        IFS='|' read -r name w h r sc <<< "$row"
+        hz=""; (( r > 0 )) && hz=" @ $(( (r + 500) / 1000 )) Hz"
+        lines+=("${X}${B}$(printf '%-10s' "$name")${R}${X}${w}x${h}${hz}${R}   ${D}suggested scale${R} ${P}${sc}x${R}")
+    done
+    screen "Hardware" "Displays" "Native resolution at the highest refresh rate. Pick the scale."
+    card 9 "${lines[@]}"
+    nav_footer "enter" "select"
+    menu $(( 12 + ${#OUTPUTS[@]} )) "$SCALE" \
+        "Suggested|each display as shown above|auto" \
+        "100%|1x · small text, most space|1" \
+        "125%|1.25x|1.25" \
+        "150%|1.5x|1.5" \
+        "175%|1.75x|1.75" \
+        "200%|2x · large text|2" \
+        "Leave it|don't touch display settings|none" || return 2
+    SCALE=$ANSWER
+}
 p_keyboard() {
     local errmsg=""
     while true; do
-        screen "Keyboard" "Keyboard layout" "xkb layout(s), comma separated. Examples: us  de  fr  us,ru"
+        screen "Hardware" "Keyboard layout" "xkb layouts, comma separated; add one to switch to. e.g. us  de  us,ru"
         [[ -n $errmsg ]] && err_line "$errmsg"
         footer "enter" "continue" "$BKSP_KEY" "back (when empty)" "esc" "quit"
         text_input 9 "$KB_LAYOUT" "us" || return 2
@@ -1275,15 +1507,23 @@ p_review() {
         [[ $NVIDIA_FIX -eq 1 ]] && nv=$yes_chip || nv=$off
         sys_txt+="  ${D}NVIDIA tweaks${R} ${nv}"
     fi
-    local wp_txt="${D}Noctalia's default${R}"; [[ $WALLPAPERS_ON -eq 1 ]] && wp_txt="${WALLPAPER^} ${D}(+5 more in ~/Pictures/Wallpapers)${R}"
+    local wp_txt="${D}default wallpaper${R}"; [[ $WALLPAPERS_ON -eq 1 ]] && wp_txt="${WALLPAPER^}"
+    local ck="${T}${SYM_DONE}${R}" cx="${D}${SYM_TODO}${R}" a fo di fl look_txt
+    [[ $DARK_APPS -eq 1 ]] && a=$ck || a=$cx
+    [[ $FONTS -eq 1 ]] && fo=$ck || fo=$cx
+    [[ $USER_DIRS -eq 1 ]] && di=$ck || di=$cx
+    [[ $FLATHUB -eq 1 ]] && fl=$ck || fl=$cx
+    look_txt="$(theme_field "$COLOR_THEME" 3) ${D}·${R} $wp_txt  ${D}apps${R} $a ${D}fonts${R} $fo ${D}dirs${R} $di ${D}flathub${R} $fl"
+    local hw_txt; hw_txt="$(kb_summary)"
+    outputs_on && hw_txt+=" ${D}· displays${R} $(display_summary)"
     card 8 \
         "${D}User        ${R}${X}${user_txt}${R}" \
         "${D}Desktop     ${R}${X}${desk_txt}${R}" \
         "${D}Core        ${R}${X}${core_txt}${R}" \
         "${D}${row4_label}${R}${X}${row4_txt}${R}" \
         "${D}Apps        ${R}${X}${apps_txt}${R}" \
-        "${D}Keyboard    ${R}${X}${KB_LAYOUT}${R}" \
-        "${D}Wallpaper   ${R}${X}${wp_txt}${R}" \
+        "${D}Hardware    ${R}${X}${hw_txt}${R}" \
+        "${D}Look        ${R}${X}${look_txt}${R}" \
         "${D}Login       ${R}${X}${greeter_txt}${R}" \
         "${D}Extras      ${R}${D}bar${R} ${bp}  ${D}type-to-launch${R} ${tl}  ${D}polkit${R} ${pa}  ${D}lid${R} ${ll}" \
         "${D}System      ${R}${sys_txt}"
@@ -1302,7 +1542,7 @@ p_review() {
 }
 
 # Wizard: Backspace walks back through the pages, skipping hidden ones.
-PAGES=(p_welcome p_user p_newname p_newpass p_desktop p_extras p_wallpaper p_aur p_term p_fm p_browser p_keyboard p_dm p_review)
+PAGES=(p_welcome p_user p_newname p_newpass p_desktop p_extras p_wallpaper p_theme p_look p_aur p_term p_fm p_browser p_keyboard p_kbopts p_display p_dm p_review)
 tui_decisions() {
     if [[ $IS_ROOT -eq 1 && -n $TARGET_USER ]]; then
         if id "$TARGET_USER" &>/dev/null; then USER_PRESET=1; else CREATE_USER=1; fi
@@ -1361,6 +1601,8 @@ plain_decisions() {
     if [[ $AUR_HELPER == none ]] && needs_aur; then die "$(aur_comp_names) is only in the AUR: use --aur-helper=paru or yay."; fi
     info "Compositors: $(comp_names) | AUR helper: $AUR_HELPER"
     info "User: $TARGET_USER | apps: $([[ $INSTALL_APPS -eq 1 ]] && echo "$TERM_APP $FM_APP $BROWSER_APP" || echo "$TERM_APP") | layout: $KB_LAYOUT"
+    info "Theme: $(theme_field "$COLOR_THEME" 3) | app theme: $([[ $DARK_APPS -eq 1 ]] && echo on || echo off) | fonts: $([[ $FONTS -eq 1 ]] && echo on || echo off) | keyboard: $(kb_summary)"
+    if outputs_on; then info "Displays: $(display_summary)"; fi
     [[ $SERVICES_DISTRO -eq 1 ]] && info "Desktop services: $([[ $SERVICES -eq 1 ]] && echo on || echo off)$([[ $NVIDIA_FIX -eq 1 ]] && echo " | NVIDIA tweaks: on")"
     [[ $DRY_RUN -eq 1 ]] && return 0
     if [[ $CONFIGS_ONLY -eq 1 ]]; then
@@ -1398,6 +1640,11 @@ collect_packages() {
     if [[ $INSTALL_GREETER -eq 1 || $POLKIT_AGENT -eq 1 ]]; then addp PK_OPTIONAL "$(pkgs polkit)"; fi
     if [[ $AUR_HELPER != none ]]; then PK_OPTIONAL+=(base-devel git); [[ $IS_ROOT -eq 1 ]] && PK_OPTIONAL+=(sudo); fi
     while IFS=$'\t' read -r _ line; do addp PK_OPTIONAL "$line"; done < <(service_plan)
+    if [[ $DARK_APPS -eq 1 ]]; then for g in gtk-theme icons cursor dconf qtct; do addp PK_OPTIONAL "$(pkgs "$g")"; done; fi
+    if [[ $FONTS -eq 1 ]]; then for g in ui-font nerd-font xz; do addp PK_OPTIONAL "$(pkgs "$g")"; done; fi
+    [[ $USER_DIRS -eq 1 ]] && addp PK_OPTIONAL "$(pkgs user-dirs)"
+    [[ $FLATHUB -eq 1 ]] && addp PK_OPTIONAL "$(pkgs flatpak)"
+    has_comp labwc && outputs_on && addp PK_OPTIONAL "$(pkgs wlr-randr)"
 
     # Debian trixie: the greeter and Umbriel come from trixie-backports.
     if [[ $FAMILY == debian && $DEB_SUITE == trixie ]]; then
@@ -1408,6 +1655,9 @@ collect_packages() {
         PK_ESSENTIAL=("${keep[@]}")
         for p in "${PK_OPTIONAL[@]}"; do [[ $p == xdg-desktop-portal-umbriel ]] && PK_BACKPORTS+=("$p"); done
     fi
+    # The same package can come from two choices (Arch's fonts and the Nerd Font).
+    mapfile -t PK_ESSENTIAL < <(printf '%s\n' "${PK_ESSENTIAL[@]}" | awk 'NF && !seen[$0]++')
+    mapfile -t PK_OPTIONAL < <(printf '%s\n' "${PK_OPTIONAL[@]}" | awk -v ess=" ${PK_ESSENTIAL[*]} " 'NF && !seen[$0]++ && index(ess, " " $0 " ") == 0')
     true
 }
 
@@ -1490,9 +1740,144 @@ build_install_steps() {
     INSTALL_STEPS+=("files|Write $(comp_names | cut -c1-40) config" "check|Validate configs")
     [[ $LID_FIX -eq 1 ]] && INSTALL_STEPS+=("lid|Configure lid close")
     if [[ $INSTALL_GREETER -eq 1 ]]; then INSTALL_STEPS+=("greeter|Set up Noctalia Greeter" "dm|Enable the login screen"); fi
+    INSTALL_STEPS+=("look|Theme apps, fonts and folders")
+    [[ $FLATHUB -eq 1 ]] && INSTALL_STEPS+=("flathub|Add Flathub")
     [[ $SERVICES -eq 1 ]] && INSTALL_STEPS+=("services|Enable desktop services")
     [[ $NVIDIA_FIX -eq 1 ]] && INSTALL_STEPS+=("nvidia|Apply NVIDIA tweaks")
     return 0
+}
+
+# ---------- colour theme, app theme, fonts, folders, Flathub ----------
+# Noctalia's built-in templates recolour the compositors, GTK, Qt and the
+# terminal whenever the theme (or, with "wallpaper", the wallpaper) changes.
+theme_template_ids() {
+    local ids=() c
+    for c in "${COMPS[@]}"; do
+        case $c in niri|hyprland|sway|scroll|labwc|umbriel) ids+=("$c") ;;
+            mango) mango_is_legacy || ids+=(mango) ;; kde) ids+=(kcolorscheme) ;; esac
+    done
+    [[ $DARK_APPS -eq 1 ]] && ids+=(gtk3 gtk4 qt)
+    case $TERM_APP in alacritty|kitty|foot|ghostty|wezterm) ids+=("$TERM_APP") ;; esac
+    local out="" i; for i in "${ids[@]}"; do out+="\"$i\", "; done
+    echo "[${out%, }]"
+}
+write_theme_toml() {  # write_theme_toml FILE
+    {
+        echo "# Written by noctalia-installer/install.sh"
+        echo "[theme]"
+        echo 'mode = "dark"'
+        if [[ $COLOR_THEME == wallpaper ]]; then echo 'source = "wallpaper"'
+        else echo 'source = "builtin"'; echo "builtin = \"$(theme_field "$COLOR_THEME" 2)\""; fi
+        echo
+        echo "[theme.templates]"
+        echo "enable_builtin_templates = true"
+        echo "builtin_ids = $(theme_template_ids)"
+    } > "$1"
+}
+
+user_gsettings() {  # user_gsettings KEY VALUE — org.gnome.desktop.interface, recorded for --uninstall
+    command -v gsettings >/dev/null && command -v dbus-run-session >/dev/null || return 0
+    local old
+    old="$(as_user dbus-run-session -- gsettings get org.gnome.desktop.interface "$1" 2>/dev/null)" || return 0
+    as_user dbus-run-session -- gsettings set org.gnome.desktop.interface "$1" "$2" 2>/dev/null || return 0
+    rec gsetting "$1" "$old"
+}
+fetch_into() {  # fetch_into URL DIR — download a .tar.xz release into DIR (as the user)
+    local tmp="$TMP_DIR/fetch.tar.xz"
+    curl -fsSL --retry 2 -o "$tmp" "$1" 2>>"$LOG" || return 1
+    mk_user_dir "$(dirname "$2")" "$2"
+    tar -xJf "$tmp" -C "$2" || return 1
+    [[ $IS_ROOT -eq 1 ]] && chown -R "$TARGET_USER:$TARGET_GROUP" "$2"
+    true
+}
+theme_dirs_exist() { local d; for d in /usr/share/themes "$TARGET_HOME/.local/share/themes" "$TARGET_HOME/.themes"; do [[ -d $d/$1 ]] && return 0; done; return 1; }
+
+apply_look() {
+    local data="$TARGET_HOME/.local/share"
+    mk_user_dir "$TARGET_HOME/.local" "$data"
+    if [[ $FONTS -eq 1 ]]; then
+        if ! fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd"; then
+            local fdir="$data/fonts/JetBrainsMonoNerd"
+            mk_user_dir "$data/fonts"
+            if fetch_into "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz" "$fdir"; then
+                rec userdir "$fdir"; ok "Installed JetBrains Mono Nerd Font in $fdir"
+            else warn "Couldn't download JetBrains Mono Nerd Font; Noctalia's icons still work, the terminal uses your default monospace font."; fi
+        fi
+        # Inter for the interface, the Nerd Font for monospace (terminals ask for "monospace").
+        mk_user_dir "$CONFIG_HOME/fontconfig" "$CONFIG_HOME/fontconfig/conf.d"
+        cat > "$TMP_DIR/60-noctalia-fonts.conf" <<'XML'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<!-- Written by noctalia-installer: Inter for sans-serif, JetBrains Mono Nerd Font for monospace -->
+<fontconfig>
+  <alias><family>sans-serif</family><prefer><family>Inter</family></prefer></alias>
+  <alias><family>monospace</family><prefer><family>JetBrainsMono Nerd Font</family><family>JetBrains Mono</family></prefer></alias>
+</fontconfig>
+XML
+        place_user_file "$TMP_DIR/60-noctalia-fonts.conf" "$CONFIG_HOME/fontconfig/conf.d/60-noctalia-fonts.conf"
+        as_user fc-cache -f >/dev/null 2>&1 || true
+    fi
+
+    if [[ $DARK_APPS -eq 1 ]]; then
+        if ! theme_dirs_exist adw-gtk3-dark; then   # not packaged here: take the upstream release
+            local url
+            url="$(curl -fsSL https://api.github.com/repos/lassekongo83/adw-gtk3/releases/latest 2>>"$LOG" \
+                | grep -o '"browser_download_url": *"[^"]*\.tar\.xz"' | head -n1 | cut -d'"' -f4)" || url=""
+            if [[ -n $url ]] && fetch_into "$url" "$data/themes"; then
+                rec userdir "$data/themes/adw-gtk3"; rec userdir "$data/themes/adw-gtk3-dark"
+                ok "Installed the adw-gtk3 theme in $data/themes"
+            else warn "Couldn't get the adw-gtk3 theme; GTK 3 apps use Adwaita dark instead."; fi
+        fi
+        local icons=Papirus-Dark font="Inter 11"
+        [[ -d /usr/share/icons/Papirus-Dark ]] || icons=Adwaita
+        fc-list 2>/dev/null | grep -qi '\bInter\b' || font="Sans 11"
+        user_gsettings color-scheme "'prefer-dark'"
+        user_gsettings icon-theme "'$icons'"
+        user_gsettings cursor-theme "'Adwaita'"
+        user_gsettings cursor-size 24
+        user_gsettings font-name "'$font'"
+        theme_dirs_exist adw-gtk3-dark && user_gsettings gtk-theme "'adw-gtk3-dark'"
+        # The same for apps that read GTK's settings.ini instead
+        local g
+        for g in gtk-3.0 gtk-4.0; do
+            mk_user_dir "$CONFIG_HOME/$g"
+            {
+                echo "[Settings]"
+                echo "gtk-application-prefer-dark-theme=1"
+                [[ $g == gtk-3.0 ]] && { theme_dirs_exist adw-gtk3-dark && echo "gtk-theme-name=adw-gtk3-dark" || echo "gtk-theme-name=Adwaita-dark"; }
+                echo "gtk-icon-theme-name=$icons"
+                echo "gtk-cursor-theme-name=Adwaita"
+                echo "gtk-cursor-theme-size=24"
+                echo "gtk-font-name=$font"
+            } > "$TMP_DIR/settings-$g.ini"
+            place_user_file "$TMP_DIR/settings-$g.ini" "$CONFIG_HOME/$g/settings.ini"
+        done
+        # Xwayland apps find the cursor through the default icon theme
+        mk_user_dir "$data/icons" "$data/icons/default"
+        printf '[Icon Theme]\nInherits=Adwaita\n' > "$TMP_DIR/index.theme"
+        place_user_file "$TMP_DIR/index.theme" "$data/icons/default/index.theme"
+        # Qt: qt6ct with the colours Noctalia's "qt" template writes
+        mk_user_dir "$CONFIG_HOME/qt6ct" "$CONFIG_HOME/qt6ct/colors"
+        printf '[Appearance]\ncolor_scheme_path=%s\ncustom_palette=true\nicon_theme=%s\nstandard_dialogs=default\nstyle=Fusion\n' \
+            "$CONFIG_HOME/qt6ct/colors/noctalia.conf" "$icons" > "$TMP_DIR/qt6ct.conf"
+        place_user_file "$TMP_DIR/qt6ct.conf" "$CONFIG_HOME/qt6ct/qt6ct.conf"
+        if [[ $FLATHUB -eq 1 ]] && command -v flatpak >/dev/null; then
+            as_root flatpak install -y --noninteractive flathub org.gtk.Gtk3theme.adw-gtk3-dark >/dev/null 2>&1 || true
+        fi
+        ok "Apps: dark, $icons icons, Adwaita cursor; colours follow the theme"
+    fi
+
+    if [[ $USER_DIRS -eq 1 ]] && command -v xdg-user-dirs-update >/dev/null; then
+        as_user xdg-user-dirs-update && ok "Created Documents, Downloads, Music, Pictures, Videos…"
+    fi
+}
+
+setup_flathub() {
+    command -v flatpak >/dev/null || { warn "Flatpak isn't available here; skipped Flathub."; return 0; }
+    if flatpak remotes --system 2>/dev/null | grep -q '^flathub'; then ok "Flathub is already set up"; return 0; fi
+    if as_root flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo; then
+        rec flathub added; ok "Flathub added: install apps with flatpak install flathub <app>"
+    else warn "Couldn't add Flathub"; fi
 }
 
 # ---------- --dry-run: show the plan, change nothing ----------
@@ -1559,6 +1944,20 @@ print_plan() {
         if [[ -n $CURRENT_DM && $SWITCH_DM -eq 1 ]]; then echo "  • disable $CURRENT_DM and enable greetd"
         elif [[ -z $CURRENT_DM ]]; then echo "  • enable greetd"; fi
     fi
+    if [[ $COLOR_THEME == wallpaper ]]; then echo "  • colour theme: generated from the wallpaper (Noctalia, window borders$([[ $DARK_APPS -eq 1 ]] && echo ", GTK/Qt apps") and terminal)"
+    else echo "  • colour theme: $(theme_field "$COLOR_THEME" 3) (Noctalia, window borders$([[ $DARK_APPS -eq 1 ]] && echo ", GTK/Qt apps") and terminal)"; fi
+    [[ $DARK_APPS -eq 1 ]] && echo "  • dark GTK and Qt apps: adw-gtk3, Papirus icons, Adwaita cursor, qt6ct"
+    [[ $FONTS -eq 1 ]] && echo "  • fonts: Inter for the interface, JetBrains Mono Nerd Font for terminals"
+    [[ $USER_DIRS -eq 1 ]] && echo "  • create Documents, Downloads, Music, Pictures, Videos…"
+    [[ $FLATHUB -eq 1 && $CONFIGS_ONLY -eq 0 ]] && echo "  • install Flatpak and add Flathub"
+    echo "  • keyboard: $(kb_summary)"
+    if outputs_on; then
+        local row name w h r sc
+        for row in "${OUTPUTS[@]}"; do
+            IFS='|' read -r name w h r sc <<< "$row"
+            echo "  • display $name: ${w}x${h} at its highest refresh rate, scale $(output_scale "$sc")"
+        done
+    fi
     local unit what
     while IFS=$'\t' read -r unit _; do echo "  • enable $unit"; done < <(service_plan)
     while IFS=$'\t' read -r f what; do echo "  • write $f: $what"; done < <(nvidia_plan)
@@ -1591,7 +1990,8 @@ do_uninstall() {
     while IFS=$'\t' read -r kind a b; do
         case $kind in
             file|moved|sysfile) key="$kind:$a" ;;
-            greetd|kde_blur|kde_rule) key=$kind ;;
+            greetd|kde_blur|kde_rule|flathub) key=$kind ;;
+            userdir|gsetting) key="$kind:$a" ;;
             dm_disabled|enabled) key="$kind:$a" ;;
             *) continue ;;
         esac
@@ -1614,6 +2014,9 @@ do_uninstall() {
             enabled) echo "  • disable $a" ;;
             kde_blur) echo "  • set KWin's blur back to how it was" ;;
             kde_rule) echo "  • remove the KWin rule for Noctalia settings" ;;
+            userdir) echo "  • remove $a" ;;
+            gsetting) echo "  • set the $a setting back to $b" ;;
+            flathub) echo "  • leave Flathub set up (remove it with: sudo flatpak remote-delete flathub)" ;;
         esac
     done
     [[ -n $pk ]] && echo "  Packages stay installed. Remove them yourself if you like: $pk"
@@ -1642,6 +2045,12 @@ do_uninstall() {
                 as_root systemctl enable "$a" && ok "Re-enabled $a (log in with it after a reboot)" ;;
             enabled) as_root systemctl disable "$a" && ok "Disabled $a" ;;
             kde_blur|kde_rule) undo_kde "$kind" "$a" ;;
+            userdir) rm -rf -- "$a" && ok "Removed $a" ;;
+            gsetting)
+                if command -v gsettings >/dev/null && command -v dbus-run-session >/dev/null; then
+                    as_user dbus-run-session -- gsettings set org.gnome.desktop.interface "$a" "$b" 2>/dev/null \
+                        && ok "Set $a back to $b" || warn "Couldn't set $a back"
+                fi ;;
         esac
     done
     mv "$m" "$m.undone.$(date +%Y%m%d-%H%M%S)"
@@ -1863,19 +2272,138 @@ kde_extras() {
     ok "KDE Plasma: blur on, Noctalia settings open maximized"
 }
 
+# ---------- keyboard, displays, app theme: shared by every config ----------
+kb_options() {  # xkb options from the switch-key and Caps Lock choices
+    local xo=()
+    if [[ $KB_LAYOUT == *,* ]]; then
+        case $KB_SWITCH in
+            alt-shift) xo+=(grp:alt_shift_toggle) ;; ctrl-shift) xo+=(grp:ctrl_shift_toggle) ;;
+            caps) xo+=(grp:caps_toggle) ;; ralt) xo+=(grp:toggle) ;; menu) xo+=(grp:menu_toggle) ;;
+        esac
+    fi
+    if ! [[ $KB_LAYOUT == *,* && $KB_SWITCH == caps ]]; then
+        case $KB_CAPS in escape) xo+=(caps:escape) ;; ctrl) xo+=(ctrl:nocaps) ;; swap) xo+=(caps:swapescape) ;; esac
+    fi
+    local IFS=,; echo "${xo[*]}"
+}
+kb_summary() {
+    local t=$KB_LAYOUT
+    [[ -n $KB_VARIANT ]] && t+=" ($KB_VARIANT)"
+    if [[ $KB_LAYOUT == *,* ]]; then
+        case $KB_SWITCH in alt-shift) t+=" · Alt+Shift switches" ;; ctrl-shift) t+=" · Ctrl+Shift switches" ;;
+            caps) t+=" · Caps Lock switches" ;; ralt) t+=" · Right Alt switches" ;; menu) t+=" · Menu key switches" ;; esac
+    fi
+    if ! [[ $KB_LAYOUT == *,* && $KB_SWITCH == caps ]]; then
+        case $KB_CAPS in escape) t+=" · Caps=Esc" ;; ctrl) t+=" · Caps=Ctrl" ;; swap) t+=" · Caps<>Esc" ;; esac
+    fi
+    echo "$t"
+}
+kb_insert() {  # kb_insert FILE ANCHOR_REGEX VARIANT_LINE OPTIONS_LINE — add after the layout line, same indent
+    local vline="" oline=""
+    [[ -n $KB_VARIANT ]] && vline=$3
+    [[ -n $(kb_options) ]] && oline=$4
+    [[ -n $vline || -n $oline ]] || return 0
+    awk -v re="$2" -v v="$vline" -v o="$oline" '
+        { print }
+        !done && $0 ~ re {
+            match($0, /^[ \t]*/); ind = substr($0, 1, RLENGTH)
+            if (v != "") print ind v
+            if (o != "") print ind o
+            done = 1
+        }' "$1" > "$1.kb" && mv "$1.kb" "$1"
+}
+apply_keyboard() {  # apply_keyboard FILE STYLE
+    local f=$1 v=$KB_VARIANT o; o="$(kb_options)"
+    case $2 in
+        niri)     sed -i "s/layout \"us\"/layout \"$KB_LAYOUT\"/" "$f"
+                  kb_insert "$f" '^[ \t]*layout "' "variant \"$v\"" "options \"$o\"" ;;
+        hyprland) sed -i "s/kb_layout = \"us\"/kb_layout = \"$KB_LAYOUT\"/" "$f"
+                  kb_insert "$f" 'kb_layout = "' "kb_variant = \"$v\"," "kb_options = \"$o\"," ;;
+        sway)     sed -i "s/xkb_layout \"us\"/xkb_layout \"$KB_LAYOUT\"/" "$f"
+                  kb_insert "$f" '^[ \t]*xkb_layout "' "xkb_variant \"$v\"" "xkb_options \"$o\"" ;;
+        mango)    sed -i "s/^xkb_rules_layout=us$/xkb_rules_layout=$KB_LAYOUT/" "$f"
+                  kb_insert "$f" '^xkb_rules_layout=' "xkb_rules_variant=$v" "xkb_rules_options=$o" ;;
+        umbriel)  sed -i "s/^layout = \"us\"$/layout = \"$KB_LAYOUT\"/" "$f"
+                  kb_insert "$f" '^layout = "' "variant = \"$v\"" "options = \"$o\"" ;;
+    esac
+}
+kde_keyboard() {  # Plasma keeps keyboard layouts in kxkbrc
+    local kw f="$CONFIG_HOME/kxkbrc" o
+    kw="$(command -v kwriteconfig6 || command -v kwriteconfig5)" || return 0
+    [[ $KB_LAYOUT == us && -z $KB_VARIANT && -z $(kb_options) ]] && return 0
+    backup_if_exists "$f"; rec file "$f" "$LAST_BACKUP"
+    o="$(kb_options)"
+    as_user "$kw" --file kxkbrc --group Layout --key Use true
+    as_user "$kw" --file kxkbrc --group Layout --key LayoutList "$KB_LAYOUT"
+    as_user "$kw" --file kxkbrc --group Layout --key VariantList "$KB_VARIANT"
+    if [[ -n $o ]]; then
+        as_user "$kw" --file kxkbrc --group Layout --key ResetOldOptions true
+        as_user "$kw" --file kxkbrc --group Layout --key Options "$o"
+    fi
+    ok "KDE Plasma: keyboard set to $(kb_summary)"
+}
+
+outputs_on() { [[ $SCALE != none ]] && (( ${#OUTPUTS[@]} > 0 )); }
+output_scale() { if [[ $SCALE == auto ]]; then echo "$1"; else echo "$SCALE"; fi; }
+display_summary() {
+    outputs_on || { echo "left to each compositor"; return; }
+    local row name w h r sc t=""
+    for row in "${OUTPUTS[@]}"; do
+        IFS='|' read -r name w h r sc <<< "$row"
+        t+="$name $(output_scale "$sc")x  "
+    done
+    echo "${t%  }"
+}
+append_outputs() {  # append_outputs FILE STYLE — one block per detected display
+    outputs_on || return 0
+    local f=$1 row name w h r sc hz mode
+    case $2 in
+        niri|sway|mango) printf '\n%s Displays (from the installer: native resolution, highest refresh, scale)\n' \
+                             "$([[ $2 == niri ]] && echo // || echo '#')" >> "$f" ;;
+        hyprland) printf '\n-- Displays (from the installer: native resolution, highest refresh, scale)\n' >> "$f" ;;
+        umbriel)  printf '\n# Displays (from the installer: native resolution, highest refresh, scale)\n' >> "$f" ;;
+    esac
+    for row in "${OUTPUTS[@]}"; do
+        IFS='|' read -r name w h r sc <<< "$row"
+        sc="$(output_scale "$sc")"
+        hz=""; (( r > 0 )) && hz="$(printf '%d.%03d' $(( r / 1000 )) $(( r % 1000 )))"
+        case $2 in
+            niri)     printf 'output "%s" {\n    mode "%sx%s"\n    scale %s\n}\n' "$name" "$w" "$h" "$sc" ;;
+            hyprland) mode=preferred; [[ -n $hz ]] && mode="${w}x${h}@${hz}"
+                      printf 'hl.monitor({ output = "%s", mode = "%s", position = "auto", scale = %s })\n' "$name" "$mode" "$sc" ;;
+            sway)     printf 'output %s mode %sx%s scale %s\n' "$name" "$w" "$h" "$sc" ;;
+            # refresh:1000 picks the mode nearest to 1000 Hz: the highest one
+            mango)    printf 'monitor_rule=name:^%s$,width:%s,height:%s,refresh:1000,scale:%s\n' "$name" "$w" "$h" "$sc" ;;
+            umbriel)  printf '\n[output.%s]\nmode = "%sx%s@1000"\nscale = %s\n' "$name" "$w" "$h" "$sc" ;;
+            # separate calls: a refresh wlr-randr can't match mustn't cost the scale
+            labwc)    [[ -n $hz ]] && printf 'wlr-randr --output %s --mode %sx%s@%sHz >/dev/null 2>&1\n' "$name" "$w" "$h" "$hz"
+                      printf 'wlr-randr --output %s --scale %s >/dev/null 2>&1\n' "$name" "$sc" ;;
+        esac
+    done >> "$f"
+}
+drop_qt_theme() {  # no app theme: don't point Qt at qt6ct
+    [[ $DARK_APPS -eq 1 ]] && return 0
+    sed -i 's/^set \$env env.*$/set $env env/' "$1"
+    sed -i '/QT_QPA_PLATFORMTHEME/d' "$1"
+}
+
 write_comp_config() {  # write_comp_config ID
     local id=$1 w="$TMP_DIR/cfg-$1"
     mkdir -p "$w"
     case $id in
         niri)
             get_cfg niri/config.kdl "$w/config.kdl"
-            sed -i "s/layout \"us\"/layout \"$KB_LAYOUT\"/" "$w/config.kdl"
+            apply_keyboard "$w/config.kdl" niri
             apply_apps "$w/config.kdl" kdl
+            drop_qt_theme "$w/config.kdl"
+            append_outputs "$w/config.kdl" niri
             place_user_file "$w/config.kdl" "$CONFIG_HOME/niri/config.kdl" ;;
         hyprland)
             get_cfg hyprland/hyprland.lua "$w/hyprland.lua"
-            sed -i "s/kb_layout = \"us\"/kb_layout = \"$KB_LAYOUT\"/" "$w/hyprland.lua"
+            apply_keyboard "$w/hyprland.lua" hyprland
             apply_apps "$w/hyprland.lua" lua
+            drop_qt_theme "$w/hyprland.lua"
+            append_outputs "$w/hyprland.lua" hyprland
             # Noctalia's Hyprland setup uses the Lua config; move an old
             # hyprland.conf aside (backed up) so it can't take over.
             if [[ -f $CONFIG_HOME/hypr/hyprland.conf ]]; then
@@ -1887,8 +2415,10 @@ write_comp_config() {  # write_comp_config ID
             place_user_file "$w/hyprland.lua" "$CONFIG_HOME/hypr/hyprland.lua" ;;
         sway|scroll)
             get_cfg "$id/config" "$w/config"
-            sed -i "s/xkb_layout \"us\"/xkb_layout \"$KB_LAYOUT\"/" "$w/config"
+            apply_keyboard "$w/config" sway
             apply_apps "$w/config" hash
+            drop_qt_theme "$w/config"
+            append_outputs "$w/config" sway
             # SwayFX understands blur, corners and shadows; plain Sway doesn't.
             if [[ $id == sway ]] && is_swayfx; then
                 get_cfg sway/swayfx-effects "$w/fx"
@@ -1901,9 +2431,15 @@ write_comp_config() {  # write_comp_config ID
             place_user_file "$w/config" "$CONFIG_HOME/$id/config" ;;
         mango)
             get_cfg mango/config.conf "$w/config.conf"
-            sed -i "s/^xkb_rules_layout=us$/xkb_rules_layout=$KB_LAYOUT/" "$w/config.conf"
+            apply_keyboard "$w/config.conf" mango
             apply_apps "$w/config.conf" hash
-            mango_is_legacy && mango_legacy_names "$w/config.conf"
+            drop_qt_theme "$w/config.conf"
+            if mango_is_legacy; then
+                mango_legacy_names "$w/config.conf"
+                outputs_on && warn "Older Mango: set display scale yourself (its monitor rules use a different format)."
+            else
+                append_outputs "$w/config.conf" mango
+            fi
             place_user_file "$w/config.conf" "$CONFIG_HOME/mango/config.conf" ;;
         labwc)
             get_cfg labwc/rc.xml "$w/rc.xml"
@@ -1911,25 +2447,41 @@ write_comp_config() {  # write_comp_config ID
             place_user_file "$w/rc.xml" "$CONFIG_HOME/labwc/rc.xml"
             # autostart / environment: add our lines, keep the user's others.
             local f
+            # Our lines sit between markers, so a rerun replaces them.
             f="$CONFIG_HOME/labwc/autostart"
-            if [[ -f $f ]] && grep -q '^[^#]*\bnoctalia\b' "$f"; then :
-            else
-                get_cfg labwc/autostart "$w/autostart"
-                [[ -f $f ]] && { backup_if_exists "$f"; cat "$f" "$w/autostart" > "$w/autostart.new"; mv "$w/autostart.new" "$w/autostart"; }
-                place_user_file "$w/autostart" "$f"
-            fi
+            : > "$w/outputs"; append_outputs "$w/outputs" labwc
+            {
+                [[ -f $f ]] && sed '/^# >>> noctalia-installer/,/^# <<< noctalia-installer/d' "$f"
+                echo "# >>> noctalia-installer"
+                cat "$w/outputs"
+                [[ -f $f ]] && grep -q '^[^#]*\bnoctalia\b' <(sed '/^# >>> noctalia-installer/,/^# <<< noctalia-installer/d' "$f") \
+                    || { get_cfg labwc/autostart "$w/autostart.ours"; grep -v '^#' "$w/autostart.ours"; }
+                echo "# <<< noctalia-installer"
+            } > "$w/autostart"
+            place_user_file "$w/autostart" "$f"
             f="$CONFIG_HOME/labwc/environment"
-            { [[ -f $f ]] && grep -v '^XKB_DEFAULT_LAYOUT=' "$f"; echo "XKB_DEFAULT_LAYOUT=$KB_LAYOUT"; } > "$w/environment" || true
+            get_cfg labwc/environment "$w/environment.ours"
+            sed -i "s/^XKB_DEFAULT_LAYOUT=us$/XKB_DEFAULT_LAYOUT=$KB_LAYOUT/" "$w/environment.ours"
+            [[ -n $KB_VARIANT ]] && echo "XKB_DEFAULT_VARIANT=$KB_VARIANT" >> "$w/environment.ours"
+            [[ -n $(kb_options) ]] && echo "XKB_DEFAULT_OPTIONS=$(kb_options)" >> "$w/environment.ours"
+            drop_qt_theme "$w/environment.ours"
+            {
+                [[ -f $f ]] && grep -Ev '^(XKB_DEFAULT_(LAYOUT|VARIANT|OPTIONS)|QT_QPA_PLATFORMTHEME|XCURSOR_(THEME|SIZE))=' "$f"
+                grep -v '^#' "$w/environment.ours"
+            } > "$w/environment" || true
             place_user_file "$w/environment" "$f" ;;
         umbriel)
             get_cfg umbriel/config.toml "$w/config.toml"
-            sed -i "s/^layout = \"us\"$/layout = \"$KB_LAYOUT\"/" "$w/config.toml"
+            apply_keyboard "$w/config.toml" umbriel
             apply_apps "$w/config.toml" hash
+            drop_qt_theme "$w/config.toml"
+            append_outputs "$w/config.toml" umbriel
             place_user_file "$w/config.toml" "$CONFIG_HOME/umbriel/config.toml" ;;
         kde)
             get_cfg kde/noctalia.desktop "$w/noctalia.desktop"
             place_user_file "$w/noctalia.desktop" "$CONFIG_HOME/autostart/noctalia.desktop"
             kde_extras
+            kde_keyboard
             warn "KDE Plasma: Noctalia autostarts, but screenshots and clipboard history are limited there. Add shortcuts (noctalia msg ...) in System Settings." ;;
     esac
 }
@@ -2119,6 +2671,11 @@ run_steps() {
         rm -f "$NOCTALIA_DIR/10-niri.toml"
     fi
     place_user_file "$toml" "$NOCTALIA_DIR/10-installer.toml"
+    write_theme_toml "$TMP_DIR/40-theme.toml"
+    place_user_file "$TMP_DIR/40-theme.toml" "$NOCTALIA_DIR/40-theme.toml"
+    if [[ -f $TARGET_HOME/.local/state/noctalia/settings.toml ]] && grep -q '^\[theme' "$TARGET_HOME/.local/state/noctalia/settings.toml"; then
+        warn "A theme you picked in Noctalia earlier overrides this one (~/.local/state/noctalia/settings.toml)."
+    fi
 
     if [[ $WALLPAPERS_ON -eq 1 ]]; then
         local wdir="$TARGET_HOME/Pictures/Wallpapers" row id
@@ -2215,6 +2772,13 @@ run_steps() {
             warn "Kept $CURRENT_DM; greetd was not enabled (two login managers would conflict)."
         fi
     fi
+
+    if [[ $FLATHUB -eq 1 && $CONFIGS_ONLY -eq 0 ]]; then
+        progress 96 flathub "Adding Flathub…"
+        setup_flathub
+    fi
+    progress 96 look "Theming apps, fonts and folders…"
+    apply_look
 
     if [[ $SERVICES -eq 1 ]]; then
         progress 97 services "Enabling desktop services…"

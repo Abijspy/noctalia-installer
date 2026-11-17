@@ -5,7 +5,7 @@
 
 Always: TOML/XML/KDL parse, Hyprland Lua runs against a stub of the hl.*
 API, and every config keeps the placeholders install.sh rewrites
-(alacritty / nautilus / firefox, the "us" layout) and the rule that opens
+(alacritty / nautilus / firefox, the "us" layout, the qt6ct line) and the rule that opens
 Noctalia settings full size. With --mango-src / --umbriel-src (git clones
 of those compositors), Mango option names and Umbriel keys and actions are
 checked against their source code.
@@ -75,13 +75,14 @@ def check_hyprland_lua():
 
 
 # ------------------------------------------- what install.sh depends on
+QT = "QT_QPA_PLATFORMTHEME"  # install.sh removes these lines when the app theme is off
 PLACEHOLDERS = {
-    "niri/config.kdl":     ['layout "us"'],
-    "hyprland/hyprland.lua": ['kb_layout = "us"'],
-    "sway/config":         ['xkb_layout "us"'],
-    "scroll/config":       ['xkb_layout "us"'],
-    "mango/config.conf":   ["xkb_rules_layout=us"],
-    "umbriel/config.toml": ['layout = "us"'],
+    "niri/config.kdl":     ['layout "us"', QT],
+    "hyprland/hyprland.lua": ['kb_layout = "us"', QT],
+    "sway/config":         ['xkb_layout "us"', "set $env env " + QT],
+    "scroll/config":       ['xkb_layout "us"', "set $env env " + QT],
+    "mango/config.conf":   ["xkb_rules_layout=us", QT],
+    "umbriel/config.toml": ['layout = "us"', QT],
     "labwc/rc.xml":        [],
 }
 SETTINGS_RULE = {
@@ -103,7 +104,7 @@ def check_installer_contract():
                 fail(f"{f}: missing the '{app}' placeholder install.sh replaces")
         for n in needles:
             if n not in text:
-                fail(f"{f}: missing '{n}' (install.sh sets the keyboard layout there)")
+                fail(f"{f}: missing '{n}' (install.sh rewrites it)")
         if re.search(SETTINGS_RULE[f], text):
             ok(f"{f}: placeholders and Noctalia settings rule present")
         else:

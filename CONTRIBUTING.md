@@ -9,10 +9,13 @@ Thanks for helping. This file explains how the repository fits together, how to 
   - `alacritty`, `nautilus` and `firefox` are replaced by the terminal, file manager and browser the user picks;
   - the `us` keyboard layout (`layout "us"`, `kb_layout = "us"`, `xkb_layout "us"`, `xkb_rules_layout=us`, `layout = "us"`) is replaced by theirs.
 
+  - the `QT_QPA_PLATFORMTHEME` line (and Sway's `set $env env QT_QPA_PLATFORMTHEME=qt6ct`) is removed when the app theme is off;
+  - the keyboard variant and options lines are added right after the layout line, and one display block per detected display is appended at the end.
+
   `tests/check-configs.py` fails if one of these goes missing.
 - **Mango** uses Mango 0.18's option names; `install.sh` translates them back for older Mango (`mango_legacy_names`). Add any newly used renamed option to that list.
 - **Sway**: `configs/sway/swayfx-effects` is appended only when SwayFX is installed. Plain Sway rejects those commands.
-- **Noctalia** settings live in `configs/noctalia/`. They are merged with the user's own files, so only set what the preset needs.
+- **Noctalia** settings live in `configs/noctalia/`. They are merged with the user's own files, so only set what the preset needs. The installer also writes `40-theme.toml` (theme and built-in templates); Noctalia's templates then add an include line to each compositor's config and keep the colours in step with the theme.
 
 ## Testing a change
 

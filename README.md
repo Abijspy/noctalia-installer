@@ -70,13 +70,18 @@ On other distributions, compositors your distribution doesn't package are greyed
 4. **Extras:** Noctalia Greeter, the [bar preset](#noctalia-bar-preset), [wallpapers](#wallpapers) (then pick the default one), overview type-to-launch, Noctalia's polkit agent, file manager and browser, the lid-close lock (laptops only, and only with niri, Sway or Scroll), [desktop services](#desktop-services-and-nvidia) and, when an NVIDIA driver is loaded, the [NVIDIA tweaks](#desktop-services-and-nvidia). Then the **AUR helper**:
    - keep yay or paru if one is already installed, install **paru** or **yay**, or skip it;
    - Scroll and Umbriel are only in the AUR, so they need a helper.
+
+   Then the **colour theme** (see [Themes and app looks](#themes-and-app-looks)) and the **finishing touches**: dark app theme, fonts, standard folders and Flathub.
 5. **Apps:**
    - terminal: alacritty, kitty, foot, ghostty or wezterm;
    - file manager: 10 graphical and 5 terminal file managers, or none (see [File managers](#file-managers));
    - browser: Firefox, LibreWolf, Brave, Mullvad Browser, Tor Browser, Ungoogled Chromium, Zen Browser, Chromium or none (see [Browsers](#browsers)).
 
    The keybinds in every config are updated to match.
-6. **Keyboard:** the layout is written into each compositor's config, e.g. `us` or `us,de`.
+6. **Hardware:**
+   - **keyboard layout**, e.g. `us` or `us,de`;
+   - **keyboard options:** a layout variant (`intl`, `dvorak`…), the key that switches layouts (Alt+Shift, Ctrl+Shift, Caps Lock, Right Alt or Menu), and what Caps Lock does (Escape, Ctrl or swapped with Escape);
+   - **displays:** each connected display with its native resolution, highest refresh rate and a suggested scale (see [Displays](#displays)). This page is skipped when no display is detected.
 7. **Review:** if gdm, sddm or lightdm is active, it first asks whether to replace it with greetd. Then you can install, go back and change your choices, or quit.
 8. **Install:** each step is shown as it runs, with a progress bar and the latest log lines. Keys are ignored during this step so it can't be stopped halfway.
 9. **Done:** the main keybinds, any notes, and an offer to reboot.
@@ -256,7 +261,7 @@ The browser screen shows which source will be used, and Mod+B launches whatever 
   `makepkg -s` pulls in the build tools (Go for yay, Rust for paru). AUR packages (Scroll, Umbriel, AUR browsers) are then installed through the helper, also as your user.
   - Run as root, the installer gives that user passwordless `sudo` only while it builds, and removes the rule straight after (and on exit).
 - A config for each compositor you picked (see the table above). Any existing file is backed up first.
-- `~/.config/noctalia/10-installer.toml`, which turns on overview type-to-launch for niri and Umbriel and the polkit agent.
+- `~/.config/noctalia/10-installer.toml`, which turns on overview type-to-launch for niri and Umbriel and the polkit agent, and `40-theme.toml` with the [colour theme](#themes-and-app-looks).
 - If you choose the greeter: `noctalia-greeter` (which pulls in `greetd`) and `polkit`. The installer sets `command` in `[default_session]` of `/etc/greetd/config.toml`, keeps the greeter account your distribution's greetd already uses (or sets `greeter` if there is none), and leaves the rest of the file unchanged. On Debian and Ubuntu the greeter package configures greetd itself, so the file isn't touched:
   ```toml
   [default_session]
@@ -264,6 +269,47 @@ The browser screen shows which source will be used, and Mod+B launches whatever 
   user = "greeter"
   ```
   It then runs `noctalia-greeter-apply-appearance --setup-system` and enables `greetd`. Your old login manager is disabled but not stopped, so your current session keeps running. The switch happens when you reboot.
+
+## Themes and app looks
+
+Pick a colour theme in the installer, or with `--theme=`: Rosé Pine (the default, matching the configs), Catppuccin, Tokyo Night, Gruvbox, Nord, Dracula, Kanagawa, Ayu, Eldritch, Noctalia, or **from your wallpaper**. The installer writes `~/.config/noctalia/40-theme.toml`, which sets the theme and turns on Noctalia's built-in templates for:
+
+- **each compositor you picked:** window borders and other colours follow the theme. Noctalia adds one include line to the compositor's config for this;
+- **GTK 3/4 and Qt apps**, with the app theme on;
+- **your terminal** (Alacritty, Kitty, Foot, Ghostty or WezTerm);
+- **KDE Plasma's colour scheme**, when Plasma is picked.
+
+With *from your wallpaper*, all of it changes whenever you pick a new wallpaper. You can change the theme any time in Noctalia's settings.
+
+**App theme** (on by default, `--no-app-theme` to skip):
+
+- installs the `adw-gtk3` GTK theme, falling back to its upstream release when your distribution doesn't package it; Papirus icons; the Adwaita cursor; and `qt6ct`;
+- sets the dark preference, icons, cursor and font for GTK apps (through `gsettings` and `settings.ini`);
+- points Qt apps at `qt6ct` (`QT_QPA_PLATFORMTHEME=qt6ct` in each compositor's config), with the colours Noctalia writes.
+
+**Fonts** (`--no-fonts` to skip): Inter for the interface and JetBrains Mono Nerd Font for terminals, set as the system's `sans-serif` and `monospace` in `~/.config/fontconfig/conf.d/60-noctalia-fonts.conf`. Where the Nerd Font isn't packaged, it's downloaded from the Nerd Fonts release into `~/.local/share/fonts`.
+
+**Folders** (`--no-user-dirs` to skip): `xdg-user-dirs` creates Documents, Downloads, Music, Pictures, Videos and the rest, in your language.
+
+**Flathub** (`--flathub`, off by default): installs Flatpak and adds Flathub for the whole system, plus the adw-gtk3 theme for Flatpak apps.
+
+## Displays
+
+The installer reads each connected display's name, native resolution and size from the kernel (`/sys/class/drm`), and the refresh rates from its EDID. It suggests a scale from the pixel density; a laptop panel gets a little less, since it sits closer to your eyes. You can take the suggestions, pick one scale for all displays, or leave displays alone (`--scale=auto|1|1.25|1.5|1.75|2|none`).
+
+Each config then gets one block per display:
+
+| Compositor | What's written |
+| --- | --- |
+| niri | `output "eDP-1" { mode "2560x1600"; scale 1.5 }` (niri picks the highest refresh rate) |
+| Hyprland | `hl.monitor({ output = "eDP-1", mode = "2560x1600@165.000", position = "auto", scale = 1.5 })`, or `preferred` when the EDID lists no refresh rate |
+| Sway, Scroll | `output eDP-1 mode 2560x1600 scale 1.5` (Sway picks the highest refresh rate) |
+| Mango | `monitor_rule=name:^eDP-1$,width:2560,height:1600,refresh:1000,scale:1.5` (the nearest mode to 1000 Hz is the highest) |
+| Umbriel | `[output.eDP-1]` with `mode = "2560x1600@1000"` and `scale = 1.5` |
+| Labwc | `wlr-randr` lines in `autostart` |
+| KDE Plasma | nothing: Plasma's own display settings handle it |
+
+Positions are left to each compositor, which places displays side by side. Displays plugged in later get the compositor's defaults.
 
 ## Desktop services and NVIDIA
 
@@ -289,9 +335,9 @@ Every run keeps a record in `~/.local/state/noctalia-installer/manifest`. `./ins
 - puts back each config file as it was before the first install (or removes it, if it didn't exist), and moves `hyprland.conf` back;
 - restores `/etc/greetd/config.toml`, disables greetd if the installer enabled it, and re-enables your old login manager;
 - disables the services the installer enabled, removes the lid and NVIDIA files, and undoes the KDE blur and window rule;
-- removes the bundled wallpapers.
+- removes the bundled wallpapers, the theme, font and app-theme files, and fonts or themes it downloaded, and sets the GTK settings back.
 
-Packages stay installed; it prints the list so you can remove them yourself. It shows everything before changing anything and asks to confirm (`--yes` skips the question). Run it as the same user, or as root with `--user=NAME`. Installs made before v1.0.0 have no record and can't be undone this way.
+Packages stay installed; it prints the list so you can remove them yourself. Files that Noctalia's theme templates wrote (such as `~/.config/niri/noctalia.kdl` and the import in `gtk.css`) stay too; turn the templates off in Noctalia's settings first if you want those gone. It shows everything before changing anything and asks to confirm (`--yes` skips the question). Run it as the same user, or as root with `--user=NAME`. Installs made before v1.0.0 have no record and can't be undone this way.
 
 ## Options
 
@@ -311,6 +357,15 @@ Packages stay installed; it prints the list so you can remove them yourself. It 
 | `--lid-fix` | Lock the screen before suspend when the lid closes (niri, Sway, Scroll) |
 | `--stock-bar` | Keep Noctalia's default bar instead of the bar preset |
 | `--wallpaper=…` | `moonrise` `aurora` `dunes` `waves` `nebula` `orbit`, or `none` for Noctalia's own |
+| `--theme=…` | `rose-pine` `catppuccin` `tokyo-night` `gruvbox` `nord` `dracula` `kanagawa` `ayu` `eldritch` `noctalia`, or `wallpaper` |
+| `--no-app-theme` | Leave GTK/Qt apps, icons and the cursor alone |
+| `--no-fonts` | Don't install Inter and JetBrains Mono Nerd Font |
+| `--no-user-dirs` | Don't create Documents, Downloads, … |
+| `--flathub` | Install Flatpak and add Flathub |
+| `--scale=…` | `auto` (per display), `1` `1.25` `1.5` `1.75` `2`, or `none` to leave displays alone |
+| `--variant=…` | Keyboard layout variant(s), comma separated like `--layout`, e.g. `intl` or `intl,` |
+| `--switch-key=…` | Key that switches layouts: `alt-shift` (default) `ctrl-shift` `caps` `ralt` `menu` |
+| `--caps=…` | Caps Lock: `normal` (default) `escape` `ctrl` `swap` |
 | `--no-services` | Don't enable NetworkManager, Bluetooth or power profiles |
 | `--no-nvidia-fix` | Don't apply the NVIDIA tweaks |
 | `--dry-run` | Go through the choices, then list every package, file and system change, and stop. Needs no root |

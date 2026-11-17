@@ -61,12 +61,23 @@ jobs:
           install -m 755 "$(command -v sway)" /tmp/sway
           XDG_RUNTIME_DIR=/tmp WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
             /tmp/sway -C -c configs/sway/config
+      - name: Validate configs as the installer writes them (keyboard options, displays, app theme)
+        run: |
+          pacman -S --noconfirm --needed python
+          useradd -m tester
+          python3 tests/sim/make-drm.py /tmp/drm
+          NOCTALIA_OS_RELEASE=tests/sim/os/nixos NOCTALIA_TEST_DRM=/tmp/drm ./install.sh --yes --no-tui --user=tester \
+            --compositors=niri,sway --layout=us,de --variant=intl, --switch-key=ctrl-shift --caps=escape --no-fonts
+          niri validate -c /home/tester/.config/niri/config.kdl
+          XDG_RUNTIME_DIR=/tmp WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
+            /tmp/sway -C -c /home/tester/.config/sway/config
+
       - name: noctalia config validate
         # Noctalia may want a running session for some checks; don't fail the build on that.
         continue-on-error: true
         run: |
           mkdir -p /tmp/xdg/noctalia
-          cp configs/noctalia/*.toml /tmp/xdg/noctalia/
+          cp configs/noctalia/*.toml /home/tester/.config/noctalia/40-theme.toml /tmp/xdg/noctalia/
           XDG_CONFIG_HOME=/tmp/xdg noctalia config validate
 
   release:
