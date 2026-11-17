@@ -74,7 +74,7 @@ On other distributions, compositors your distribution doesn't package are greyed
    Then the **colour theme** (see [Themes and app looks](#themes-and-app-looks)) and the **finishing touches**: dark app theme, fonts, standard folders and Flathub.
 5. **Apps:**
    - terminal: alacritty, kitty, foot, ghostty or wezterm;
-   - file manager: 10 graphical and 5 terminal file managers, or none (see [File managers](#file-managers));
+   - file manager: Luciole (the default on Arch), 10 other graphical and 5 terminal file managers, or none (see [File managers](#file-managers));
    - browser: Firefox, LibreWolf, Brave, Mullvad Browser, Tor Browser, Ungoogled Chromium, Zen Browser, Chromium or none (see [Browsers](#browsers)).
 
    The keybinds in every config are updated to match.
@@ -208,8 +208,11 @@ Six original 4K wallpapers in Noctalia's palette replace Noctalia's default wall
 
 Mod+E opens the file manager you pick. Terminal file managers open inside the terminal you chose (e.g. `kitty yazi`, `alacritty -e ranger`).
 
+**[Luciole](https://github.com/noctalia-dev/luciole)**, the Noctalia team's own file manager, is the default on Arch. It's a native Wayland app with tabs, split view, Miller columns and fast previews, and its colours follow your Noctalia theme (the installer turns on Noctalia's `luciole` template). It's only packaged in the AUR, as `luciole-git`, so the installer builds it with your AUR helper (the default helper becomes paru for it), along with `gvfs`, `xdg-terminal-exec` and `ffmpegthumbnailer` for the trash, "open terminal here" and video thumbnails. Without an AUR helper, or on other distributions, the default is Nautilus.
+
 | Graphical | | Terminal | |
 |---|---|---|---|
+| Luciole | Noctalia's own, native Wayland (AUR) | | |
 | Nautilus | GNOME Files | Yazi | fast, image previews |
 | Dolphin | KDE, tabs and split view | ranger | vim keys |
 | Thunar | Xfce, lightweight | lf | minimal |
@@ -349,7 +352,7 @@ Packages stay installed; it prints the list so you can remove them yourself. Fil
 | `--aur-helper=…` | Arch only: `auto` (keep an installed one, else paru when needed), `paru`, `yay`, `none` |
 | `--user=NAME` | User to set up when run as root |
 | `--terminal=…` | `alacritty` `kitty` `foot` `ghostty` `wezterm` |
-| `--file-manager=…` | `nautilus` `dolphin` `thunar` `nemo` `caja` `pcmanfm` `pcmanfm-qt` `cosmic-files` `krusader` `doublecmd` `yazi` `ranger` `lf` `nnn` `mc` `none` |
+| `--file-manager=…` | `luciole` (default on Arch with an AUR helper) `nautilus` (default elsewhere) `dolphin` `thunar` `nemo` `caja` `pcmanfm` `pcmanfm-qt` `cosmic-files` `krusader` `doublecmd` `yazi` `ranger` `lf` `nnn` `mc` `none` |
 | `--browser=…` | `firefox` `librewolf` `brave` `mullvad` `tor` `ungoogled` `zen` `chromium` `none` |
 | `--layout=…` | Keyboard layout(s), e.g. `us,de` |
 | `--no-apps` | Skip the file manager and browser (a terminal is always installed) |

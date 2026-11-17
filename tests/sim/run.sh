@@ -111,6 +111,8 @@ reset
 mkdir -p "$TH/.config/niri"; echo "// MINE" > "$TH/.config/niri/config.kdl"; chown -R tester: "$TH/.config"
 run arch --yes --no-tui --compositors=niri --no-greeter --no-services
 check "installed over it" grep -q 'noctalia' "$TH/.config/niri/config.kdl"
+check "Luciole is the default file manager on Arch" called 'luciole-git'
+check "Mod+E opens Luciole" grep -q 'spawn "luciole"' "$TH/.config/niri/config.kdl"
 run arch --yes --no-tui --compositors=niri --no-greeter --no-services          # a second run backs up our own file
 run arch --uninstall --yes
 check "original is back after two installs" grep -qx '// MINE' "$TH/.config/niri/config.kdl"
@@ -151,6 +153,7 @@ for os in fedora tumbleweed trixie resolute alpine chimera gentoo solus void nix
     run "$os" --yes --no-tui "${extra[@]}"
     check "$os: no errors" no_errors
     check "$os: niri config" test -s "$TH/.config/niri/config.kdl"
+    [[ $os == fedora ]] && check "fedora: Nautilus (Luciole is AUR only)" grep -q 'spawn "nautilus"' "$TH/.config/niri/config.kdl"
 done
 
 [[ $FAKE_PORTAGE -eq 1 ]] && rm -rf /var/db/repos

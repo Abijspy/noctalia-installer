@@ -21,7 +21,7 @@
 #    --aur-helper=auto|paru|yay|none  # auto: keep an installed one, else paru if needed
 #    --user=NAME                      # user to set up (when run as root)
 #    --terminal=alacritty|kitty|foot|ghostty|wezterm
-#    --file-manager=nautilus|dolphin|thunar|nemo|caja|pcmanfm|pcmanfm-qt|
+#    --file-manager=luciole|nautilus|dolphin|thunar|nemo|caja|pcmanfm|pcmanfm-qt|
 #                   cosmic-files|krusader|doublecmd|yazi|ranger|lf|nnn|mc|none
 #    --browser=firefox|librewolf|brave|mullvad|tor|ungoogled|zen|chromium|none
 #    --layout=us                      # keyboard layout(s), e.g. us,de
@@ -78,7 +78,7 @@ TARGET_USER=""
 NEW_USER_PASS=""
 CREATE_USER=0
 TERM_APP="alacritty"
-FM_APP="nautilus"
+FM_APP="auto"   # Luciole where the AUR is available, else Nautilus
 BROWSER_APP="firefox"
 KB_LAYOUT="us"
 COMPOSITORS="niri"
@@ -141,7 +141,7 @@ check_opt() {  # check_opt name value allowed...
     echo "Invalid --$name=$val (allowed: $*)"; exit 1
 }
 check_opt terminal     "$TERM_APP"    alacritty kitty foot ghostty wezterm
-check_opt file-manager "$FM_APP"      nautilus dolphin thunar nemo caja pcmanfm pcmanfm-qt cosmic-files krusader doublecmd yazi ranger lf nnn mc none
+check_opt file-manager "$FM_APP"      auto luciole nautilus dolphin thunar nemo caja pcmanfm pcmanfm-qt cosmic-files krusader doublecmd yazi ranger lf nnn mc none
 check_opt browser      "$BROWSER_APP" firefox librewolf brave mullvad tor ungoogled zen chromium none
 [[ $KB_LAYOUT =~ ^[a-z]{2,}(,[a-z]{2,})*$ ]] || { echo "Invalid --layout=$KB_LAYOUT (e.g. us or us,de)"; exit 1; }
 check_opt aur-helper   "$AUR_HELPER"  auto paru yay none
@@ -207,6 +207,11 @@ done
 
 has_comp()      { local c; for c in "${COMPS[@]}"; do [[ $c == "$1" ]] && return 0; done; return 1; }
 needs_aur()     { local c; for c in "${COMPS[@]}"; do [[ -n $(comp_aur_pkgs "$c") ]] && return 0; done; return 1; }
+aur_build_names() {  # compositors and Luciole: everything built from the AUR
+    local n; n="$(aur_comp_names)"
+    if fm_aur; then n="${n:+$n/}Luciole"; fi
+    echo "$n"
+}
 aur_comp_names() { local c n=(); for c in "${COMPS[@]}"; do [[ -n $(comp_aur_pkgs "$c") ]] && n+=("$(comp_field "$c" 2)"); done; local IFS=/; echo "${n[*]}"; }
 comp_names()    { local c n=(); for c in "${COMPS[@]}"; do n+=("$(comp_field "$c" 2)"); done; local IFS=,; echo "${n[*]}" | sed 's/,/, /g'; }
 # Lid lock is wired up only in configs that can bind the lid switch.
@@ -234,6 +239,7 @@ browser_field() {  # browser_field ID FIELD_NUMBER
 # ---------- file managers ----------
 # id | name | description | kind (gui/tui) | package names to try | Gentoo atom | command
 FM_TABLE=(
+    "luciole|Luciole|Noctalia's own · native Wayland · from the AUR|gui|luciole-git|-|luciole"
     "nautilus|Nautilus|GNOME Files|gui|nautilus|gnome-base/nautilus|nautilus"
     "dolphin|Dolphin|KDE · tabs and split view|gui|dolphin|kde-apps/dolphin|dolphin"
     "thunar|Thunar|Xfce · lightweight|gui|thunar Thunar|xfce-base/thunar|thunar"
@@ -275,6 +281,7 @@ fm_scan() {  # look up every file manager's package once
     local row id cands c
     for row in "${FM_TABLE[@]}"; do
         id=${row%%|*}
+        [[ $id == luciole ]] && continue   # AUR: see fm_luciole
         if [[ $FAMILY == gentoo ]]; then cands="$(fm_field "$id" 6)"; else cands="$(fm_field "$id" 5)"; fi
         FM_PKG[$id]=""
         if [[ $CONFIGS_ONLY -eq 1 ]]; then FM_PKG[$id]=${cands%% *}; continue; fi
@@ -282,6 +289,20 @@ fm_scan() {  # look up every file manager's package once
     done
     true   # a missing last candidate must not end the script under set -e
 }
+# Luciole (Noctalia's file manager) is packaged in the AUR only, as
+# luciole-git: available on Arch whenever an AUR helper is chosen.
+helper_choice() { if [[ $AUR_HELPER == auto ]]; then default_helper; else echo "$AUR_HELPER"; fi; }
+fm_luciole() {
+    FM_PKG[luciole]=""
+    [[ $FAMILY == arch && $CONFIGS_ONLY -eq 0 && $(helper_choice) != none ]] && FM_PKG[luciole]=luciole-git
+    true
+}
+fm_resolve() {  # turn FM_APP=auto into Luciole or Nautilus
+    [[ $FM_APP == auto ]] || return 0
+    fm_luciole
+    if [[ -n ${FM_PKG[luciole]} ]]; then FM_APP=luciole; else FM_APP=nautilus; fi
+}
+fm_aur() { [[ $INSTALL_APPS -eq 1 && $FM_APP == luciole && $FAMILY == arch ]]; }
 
 FLATPAK_BIN=/var/lib/flatpak/exports/bin
 BROWSER_CMD=""   # what Mod+B runs; set once the browser is installed
@@ -291,7 +312,7 @@ for h in paru yay; do command -v "$h" >/dev/null && { EXISTING_HELPER=$h; break;
 default_helper() {
     [[ $FAMILY == arch ]] || { echo none; return; }
     if [[ -n $EXISTING_HELPER ]]; then echo "$EXISTING_HELPER"
-    elif needs_aur; then echo paru
+    elif needs_aur || [[ $INSTALL_APPS -eq 1 && ( $FM_APP == auto || $FM_APP == luciole ) ]]; then echo paru   # Luciole is in the AUR
     else echo none; fi
 }
 
@@ -1267,7 +1288,7 @@ p_aur() {
     [[ $FAMILY == arch ]] || { AUR_HELPER=none; return 3; }
     local sub opts=() cur errmsg=""
     if needs_aur; then sub="$(aur_comp_names) is only in the AUR, so it needs a helper."
-    else sub="Optional. AUR browsers use it; without one they come from Flathub."; fi
+    else sub="Luciole, Noctalia's file manager, and AUR browsers use it. Without one: Nautilus, Flathub."; fi
     [[ -n $EXISTING_HELPER ]] && opts+=("Use installed $EXISTING_HELPER|already on this system|$EXISTING_HELPER")
     [[ $EXISTING_HELPER != paru ]] && opts+=("paru|fast · written in Rust|paru")
     [[ $EXISTING_HELPER != yay ]] && opts+=("yay|popular · written in Go|yay")
@@ -1303,15 +1324,19 @@ p_fm() {
     if [[ ${FM_SCANNED:-0} -eq 0 && $CONFIGS_ONLY -eq 0 ]]; then
         screen "Apps" "File manager" "Checking which file managers $FAMILY_LABEL packages…"
     fi
-    fm_scan
+    fm_scan; fm_luciole; fm_resolve
     local opts=() row id name desc
     for row in "${FM_TABLE[@]}"; do
         IFS='|' read -r id name desc _ <<< "$row"
         if [[ -n ${FM_PKG[$id]} ]]; then opts+=("$name|$desc|$id|0")
+        elif [[ $id == luciole && $FAMILY == arch ]]; then opts+=("$name|needs an AUR helper (go back to pick one)|$id|1")
+        elif [[ $id == luciole ]]; then opts+=("$name|AUR only (Arch); see github.com/noctalia-dev/luciole|$id|1")
         else opts+=("$name|not in your repositories|$id|1"); fi
     done
     opts+=("None|leave Mod+E unbound|none|0")
-    local cur=$FM_APP; [[ $cur != none && -z ${FM_PKG[$cur]:-} ]] && cur=none
+    local cur=$FM_APP
+    [[ $cur == luciole && -z ${FM_PKG[luciole]} ]] && cur=nautilus
+    [[ $cur != none && -z ${FM_PKG[$cur]:-} ]] && cur=none
     screen "Apps" "File manager" "Opens with Mod+E. Terminal ones open in $(printf '%s' "$TERM_APP")."
     nav_footer "enter" "select"
     menu 9 "$cur" "${opts[@]}" || return 2
@@ -1470,6 +1495,7 @@ p_dm() {
 
 p_review() {
     [[ $AUR_HELPER == auto ]] && AUR_HELPER="$(default_helper)"
+    fm_resolve
     screen "Review" "Ready to install" "Check your choices. Nothing has changed yet."
     local user_txt="$TARGET_USER" apps_txt="$TERM_APP" greeter_txt desk_txt aur_txt
     [[ $CREATE_USER -eq 1 ]] && user_txt="$TARGET_USER ${D}(new, sudo)${R}"
@@ -1593,11 +1619,16 @@ plain_decisions() {
     for c in "${COMPS[@]}"; do
         [[ ${COMP_OK[$c]:-1} -eq 1 ]] || die "$(comp_field "$c" 2) can't be installed here: ${COMP_WHY[$c]}."
     done
+    [[ $AUR_HELPER == auto ]] && AUR_HELPER="$(default_helper)"
+    fm_resolve
     if [[ $INSTALL_APPS -eq 1 && $FM_APP != none && $CONFIGS_ONLY -eq 0 ]]; then
-        fm_scan
+        fm_scan; fm_luciole
+        if [[ $FM_APP == luciole && -z ${FM_PKG[luciole]} ]]; then
+            [[ $FAMILY == arch ]] && die "Luciole comes from the AUR: use --aur-helper=paru or yay, or pick another --file-manager."
+            die "Luciole is only packaged in the AUR (Arch); pick another --file-manager."
+        fi
         [[ -n ${FM_PKG[$FM_APP]} ]] || die "$(fm_field "$FM_APP" 2) isn't in your repositories on $FAMILY_LABEL; pick another --file-manager."
     fi
-    [[ $AUR_HELPER == auto ]] && AUR_HELPER="$(default_helper)"
     if [[ $AUR_HELPER == none ]] && needs_aur; then die "$(aur_comp_names) is only in the AUR: use --aur-helper=paru or yay."; fi
     info "Compositors: $(comp_names) | AUR helper: $AUR_HELPER"
     info "User: $TARGET_USER | apps: $([[ $INSTALL_APPS -eq 1 ]] && echo "$TERM_APP $FM_APP $BROWSER_APP" || echo "$TERM_APP") | layout: $KB_LAYOUT"
@@ -1633,7 +1664,10 @@ collect_packages() {
     done
     for g in portal-gtk keyring audio media fonts; do addp PK_OPTIONAL "$(pkgs "$g")"; done
     addp PK_ESSENTIAL "$(pkgs "$TERM_APP")"   # always: Mod+Return is your way in
-    if [[ $INSTALL_APPS -eq 1 && $FM_APP != none ]]; then
+    fm_resolve
+    if fm_aur; then
+        PK_OPTIONAL+=(gvfs xdg-terminal-exec ffmpegthumbnailer)   # Luciole's trash, terminal action, thumbnails
+    elif [[ $INSTALL_APPS -eq 1 && $FM_APP != none ]]; then
         fm_scan; [[ -n ${FM_PKG[$FM_APP]} ]] && PK_OPTIONAL+=("${FM_PKG[$FM_APP]}")
     fi
     [[ $INSTALL_GREETER -eq 1 ]] && addp PK_ESSENTIAL "$(pkgs greeter)"
@@ -1733,7 +1767,7 @@ build_install_steps() {
         INSTALL_STEPS+=("pkgs|Install packages")
     fi
     [[ $AUR_HELPER != none && $AUR_HELPER != "$EXISTING_HELPER" ]] && INSTALL_STEPS+=("helper|Install $AUR_HELPER")
-    needs_aur && INSTALL_STEPS+=("aur|Build $(aur_comp_names) from the AUR")
+    if needs_aur || fm_aur; then INSTALL_STEPS+=("aur|Build $(aur_build_names) from the AUR"); fi
     if [[ $INSTALL_APPS -eq 1 && $BROWSER_APP != none && $CONFIGS_ONLY -eq 0 ]]; then
         INSTALL_STEPS+=("browser|Install $(browser_field "$BROWSER_APP" 2) ($(browser_source "$BROWSER_APP"))")
     fi
@@ -1758,6 +1792,7 @@ theme_template_ids() {
     done
     [[ $DARK_APPS -eq 1 ]] && ids+=(gtk3 gtk4 qt)
     case $TERM_APP in alacritty|kitty|foot|ghostty|wezterm) ids+=("$TERM_APP") ;; esac
+    [[ $INSTALL_APPS -eq 1 && $FM_APP == luciole ]] && ids+=(luciole)
     local out="" i; for i in "${ids[@]}"; do out+="\"$i\", "; done
     echo "[${out%, }]"
 }
@@ -1906,6 +1941,7 @@ planned_files() {  # every file the install would write, one per line
 }
 
 print_plan() {
+    fm_resolve
     local home
     if [[ $CREATE_USER -eq 1 ]]; then home="/home/$TARGET_USER"
     else home="$(getent passwd "$TARGET_USER" | cut -d: -f6)"; fi
@@ -1925,8 +1961,9 @@ print_plan() {
         echo "  • install if available: ${PK_OPTIONAL[*]}"
         (( ${#PK_BACKPORTS[@]} )) && echo "  • install from trixie-backports: ${PK_BACKPORTS[*]}"
         [[ $AUR_HELPER != none && $AUR_HELPER != "$EXISTING_HELPER" ]] && echo "  • build $AUR_HELPER from the AUR"
-        if needs_aur; then
+        if needs_aur || fm_aur; then
             local c a=(); for c in "${COMPS[@]}"; do read -ra _t <<< "$(comp_aur_pkgs "$c")"; a+=("${_t[@]}"); done
+            fm_aur && a+=(luciole-git)
             echo "  • build from the AUR: ${a[*]}"
         fi
         if [[ $INSTALL_APPS -eq 1 && $BROWSER_APP != none ]]; then
@@ -2575,6 +2612,7 @@ run_steps() {
     else CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"; fi
     NOCTALIA_DIR="$CONFIG_HOME/noctalia"
     manifest_open
+    fm_resolve
     rec run "$(date +%Y-%m-%dT%H:%M:%S)" "$VERSION" "${COMPS[*]}"
 
     # --- packages ---
@@ -2622,12 +2660,13 @@ run_steps() {
             run_long 56 62 helper "Building $AUR_HELPER from the AUR…" install_aur_helper \
                 || { aur_sudo_close; die "Installing $AUR_HELPER failed — see $LOG"; }
         fi
-        if needs_aur; then
+        if needs_aur || fm_aur; then
             local aurp=()
             for c in "${COMPS[@]}"; do
                 # shellcheck disable=SC2207
-                aurp+=($(comp_field "$c" 4))
+                aurp+=($(comp_aur_pkgs "$c"))
             done
+            fm_aur && aurp+=(luciole-git)
             run_long 62 72 aur "Building ${aurp[*]} from the AUR (this can take a while)…" aur_install "${aurp[@]}" \
                 || { aur_sudo_close; die "AUR build failed — see $LOG"; }
             ok "Built ${aurp[*]}"
