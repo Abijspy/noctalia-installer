@@ -1917,6 +1917,59 @@ setup_flathub() {
     else warn "Couldn't add Flathub"; fi
 }
 
+# ---------- Luciole as the Open/Save file picker ----------
+# xdg-desktop-portal reads the first <desktop>-portals.conf it finds, with no
+# merging, so each per-desktop file starts from the system one (or the
+# compositor's usual defaults) and only puts Luciole first for FileChooser.
+# A listed backend that isn't running falls back to the next one.
+portal_desktop() {  # XDG_CURRENT_DESKTOP name of a compositor ("" = leave alone)
+    case $1 in niri|sway|scroll|mango|labwc) echo "$1" ;; hyprland) echo hyprland ;; *) echo "" ;; esac
+}
+portal_defaults() {
+    case $1 in
+        niri)     printf '[preferred]\ndefault=gnome;gtk;\norg.freedesktop.impl.portal.Access=gtk;\norg.freedesktop.impl.portal.Notification=gtk;\norg.freedesktop.impl.portal.Secret=gnome-keyring;\n' ;;
+        hyprland) printf '[preferred]\ndefault=hyprland;gtk\n' ;;
+        mango)    printf '[preferred]\ndefault=gtk\norg.freedesktop.impl.portal.ScreenCast=wlr\norg.freedesktop.impl.portal.Screenshot=wlr\norg.freedesktop.impl.portal.Inhibit=none\n' ;;
+        labwc)    printf '[preferred]\ndefault=wlr;*\norg.freedesktop.impl.portal.Inhibit=none\n' ;;
+        *)        printf '[preferred]\ndefault=wlr;gtk\n' ;;
+    esac
+}
+luciole_portal() {
+    [[ $INSTALL_APPS -eq 1 && $FM_APP == luciole ]] || return 0
+    local c name src d dest base="$TMP_DIR/portals-base" out="$TMP_DIR/portals-out"
+    for c in "${COMPS[@]}"; do
+        name="$(portal_desktop "$c")"; [[ -n $name ]] || continue
+        dest="$CONFIG_HOME/xdg-desktop-portal/$name-portals.conf"
+        if [[ -f $dest ]]; then
+            grep -q '^org\.freedesktop\.impl\.portal\.FileChooser=luciole' "$dest" && continue
+            cp "$dest" "$base"
+        else
+            src=""
+            for d in /etc/xdg-desktop-portal /usr/share/xdg-desktop-portal; do
+                [[ -f $d/$name-portals.conf ]] && { src=$d/$name-portals.conf; break; }
+            done
+            if [[ -n $src ]]; then cp "$src" "$base"; else portal_defaults "$name" > "$base"; fi
+        fi
+        # FileChooser=luciole;<whatever was used before>
+        awk '
+            /^\[/ { insec = ($0 == "[preferred]") }
+            insec && /^default=/ { def = substr($0, 9) }
+            insec && /^org\.freedesktop\.impl\.portal\.FileChooser=/ { old = substr($0, index($0, "=") + 1); next }
+            { lines[++n] = $0; if ($0 == "[preferred]") pref = n }
+            END {
+                prev = old != "" ? old : (def != "" ? def : "gtk")
+                if (!pref) { lines[++n] = "[preferred]"; pref = n }
+                for (i = 1; i <= n; i++) {
+                    print lines[i]
+                    if (i == pref) print "# Luciole first for Open/Save dialogs (noctalia-installer)\norg.freedesktop.impl.portal.FileChooser=luciole;" prev
+                }
+            }' "$base" > "$out"
+        mk_user_dir "$CONFIG_HOME/xdg-desktop-portal"
+        place_user_file "$out" "$dest"
+    done
+    ok "Luciole is the Open/Save file picker (from your next login)"
+}
+
 # ---------- --dry-run: show the plan, change nothing ----------
 planned_files() {  # every file the install would write, one per line
     local c
@@ -1988,6 +2041,11 @@ print_plan() {
     [[ $DARK_APPS -eq 1 ]] && echo "  • dark GTK and Qt apps: adw-gtk3, Papirus icons, Adwaita cursor, qt6ct"
     [[ $FONTS -eq 1 ]] && echo "  • fonts: Inter for the interface, JetBrains Mono Nerd Font for terminals"
     [[ $USER_DIRS -eq 1 ]] && echo "  • create Documents, Downloads, Music, Pictures, Videos…"
+    if [[ $INSTALL_APPS -eq 1 && $FM_APP == luciole ]]; then
+        local pc pn; for pc in "${COMPS[@]}"; do pn="$(portal_desktop "$pc")"
+            [[ -n $pn ]] && echo "  • make Luciole the Open/Save file picker on $(comp_field "$pc" 2) ($CONFIG_HOME/xdg-desktop-portal/$pn-portals.conf)"
+        done
+    fi
     [[ $FLATHUB -eq 1 && $CONFIGS_ONLY -eq 0 ]] && echo "  • install Flatpak and add Flathub"
     echo "  • keyboard: $(kb_summary)"
     if outputs_on; then
@@ -2693,6 +2751,7 @@ run_steps() {
     mk_user_dir "$CONFIG_HOME" "$NOCTALIA_DIR" \
         "$TARGET_HOME/Pictures" "$TARGET_HOME/Pictures/Screenshots" "$TARGET_HOME/Pictures/Wallpapers"
     for c in "${COMPS[@]}"; do write_comp_config "$c"; done
+    luciole_portal
 
     local toml="$TMP_DIR/10-installer.toml"
     {

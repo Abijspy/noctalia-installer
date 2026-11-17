@@ -113,9 +113,11 @@ run arch --yes --no-tui --compositors=niri --no-greeter --no-services
 check "installed over it" grep -q 'noctalia' "$TH/.config/niri/config.kdl"
 check "Luciole is the default file manager on Arch" called 'luciole-git'
 check "Mod+E opens Luciole" grep -q 'spawn "luciole"' "$TH/.config/niri/config.kdl"
+check "Luciole is the file picker on niri" grep -q '^org.freedesktop.impl.portal.FileChooser=luciole;gnome;gtk;' "$TH/.config/xdg-desktop-portal/niri-portals.conf"
 run arch --yes --no-tui --compositors=niri --no-greeter --no-services          # a second run backs up our own file
 run arch --uninstall --yes
 check "original is back after two installs" grep -qx '// MINE' "$TH/.config/niri/config.kdl"
+check "portal file removed" test ! -e "$TH/.config/xdg-desktop-portal/niri-portals.conf"
 
 echo "== Without the app theme, Qt isn't pointed at qt6ct"
 reset

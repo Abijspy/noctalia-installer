@@ -210,6 +210,8 @@ Mod+E opens the file manager you pick. Terminal file managers open inside the te
 
 **[Luciole](https://github.com/noctalia-dev/luciole)**, the Noctalia team's own file manager, is the default on Arch. It's a native Wayland app with tabs, split view, Miller columns and fast previews, and its colours follow your Noctalia theme (the installer turns on Noctalia's `luciole` template). It's only packaged in the AUR, as `luciole-git`, so the installer builds it with your AUR helper (the default helper becomes paru for it), along with `gvfs`, `xdg-terminal-exec` and `ffmpegthumbnailer` for the trash, "open terminal here" and video thumbnails. Without an AUR helper, or on other distributions, the default is Nautilus.
 
+Luciole also becomes the **Open/Save file picker** for other apps, through xdg-desktop-portal. Umbriel's portal picks it automatically. For niri, Hyprland, Sway, Scroll, Mango and Labwc, the installer writes `~/.config/xdg-desktop-portal/<desktop>-portals.conf`: a copy of your system's portal settings for that compositor (or its usual defaults) with one added line, `org.freedesktop.impl.portal.FileChooser=luciole;` followed by whatever handled file dialogs before, so those still work if Luciole isn't running. It takes effect from your next login. KDE Plasma keeps its own file dialogs.
+
 | Graphical | | Terminal | |
 |---|---|---|---|
 | Luciole | Noctalia's own, native Wayland (AUR) | | |
