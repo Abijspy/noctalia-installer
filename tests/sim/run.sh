@@ -14,7 +14,7 @@ BIN="$(mktemp -d)"; LOGF="$(mktemp)"; chmod 777 "$BIN"; chmod 666 "$LOGF"
 install -m 755 "$HERE/stub" "$BIN/stub"
 for t in pacman dnf zypper apt-get apt-cache dpkg xbps-install xbps-query apk emerge emaint eselect portageq eopkg \
          flatpak curl wget git makepkg systemctl systemd-tmpfiles niri sway scroll mango noctalia \
-         noctalia-greeter-session noctalia-greeter-apply-appearance; do
+         noctalia-greeter-session noctalia-greeter-apply-appearance dbus-run-session gsettings xdg-user-dirs-update; do
     ln -sf "$BIN/stub" "$BIN/$t"
 done
 export STUB_BIN="$BIN" STUB_LOG="$LOGF" STUB_REPO="$HERE/repo.txt"
@@ -77,6 +77,7 @@ check "qt6ct config" test -s "$TH/.config/qt6ct/qt6ct.conf"
 check "gtk settings" grep -q 'gtk-application-prefer-dark-theme=1' "$TH/.config/gtk-3.0/settings.ini"
 check "fontconfig" test -s "$TH/.config/fontconfig/conf.d/60-noctalia-fonts.conf"
 check "flathub added" called '[flatpak] remote-add --if-not-exists flathub'
+check "dark preference set" called "[gsettings] set org.gnome.desktop.interface color-scheme 'prefer-dark'"
 check "configs pass the Umbriel/Noctalia TOML parse" python3 -c "import tomllib,sys;[tomllib.load(open(f,'rb')) for f in sys.argv[1:]]" \
     "$TH/.config/umbriel/config.toml" "$TH/.config/noctalia/40-theme.toml"
 check "terminal applied" grep -q 'kitty' "$TH/.config/hypr/hyprland.lua"
@@ -97,6 +98,7 @@ check "finishes without errors" no_errors
 check "configs removed" test ! -e "$TH/.config/niri/config.kdl"
 check "theme file removed" test ! -e "$TH/.config/noctalia/40-theme.toml"
 check "app theme files removed" test ! -e "$TH/.config/qt6ct/qt6ct.conf"
+check "gsettings set back" called "[gsettings] set org.gnome.desktop.interface color-scheme 'stub-old'"
 check "wallpapers removed" test ! -e "$TH/Pictures/Wallpapers/noctalia-moonrise.jpg"
 check "greetd config restored" grep -q 'agreety' /etc/greetd/config.toml
 check "NVIDIA files removed" test ! -e /etc/modprobe.d/90-noctalia-nvidia.conf

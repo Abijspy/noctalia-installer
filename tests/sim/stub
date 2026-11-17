@@ -31,5 +31,8 @@ case $n in
                 fi ;;
     sway)       [[ $1 == --version ]] && echo "sway version 1.11" ;;
     mango)      [[ $1 == -v ]] && echo "mango 0.18.5" ;;
+    dbus-run-session) while [[ $# -gt 0 && $1 != -- ]]; do shift; done; shift; exec "$@" ;;
+    gsettings)  [[ $1 == get ]] && echo "'stub-old'" ;;
+    xdg-user-dirs-update) exit 1 ;;   # fails, like on CI runners: the install must carry on
 esac
 exit 0

@@ -1868,8 +1868,10 @@ XML
     fi
 
     if [[ $USER_DIRS -eq 1 ]] && command -v xdg-user-dirs-update >/dev/null; then
-        as_user xdg-user-dirs-update && ok "Created Documents, Downloads, Music, Pictures, Videos…"
+        if as_user xdg-user-dirs-update; then ok "Created Documents, Downloads, Music, Pictures, Videos…"
+        else warn "xdg-user-dirs-update couldn't create the standard folders; it runs again at your first login."; fi
     fi
+    true
 }
 
 setup_flathub() {
@@ -2174,7 +2176,9 @@ greetd_set() {  # greetd_set key value
 }
 
 as_user() {  # run as the target user (needed for makepkg / AUR helpers)
-    if [[ $IS_ROOT -eq 1 ]]; then runuser -u "$TARGET_USER" -- env HOME="$TARGET_HOME" USER="$TARGET_USER" "$@"
+    if [[ $IS_ROOT -eq 1 ]]; then
+        runuser -u "$TARGET_USER" -- env HOME="$TARGET_HOME" USER="$TARGET_USER" \
+            XDG_CONFIG_HOME="$TARGET_HOME/.config" XDG_DATA_HOME="$TARGET_HOME/.local/share" "$@"
     else "$@"; fi
 }
 
