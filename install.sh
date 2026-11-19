@@ -52,11 +52,11 @@
 #
 #  Straight from GitHub (a tagged release, so the script and its
 #  configs always match):
-#    curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/v1.1.0/install.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/v1.1.1/install.sh | bash
 # =====================================================================
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 # Configs come from the same release as this script. Override with
 # NOCTALIA_INSTALLER_REF=main to test unreleased changes.
 REPO_REF="${NOCTALIA_INSTALLER_REF:-v$VERSION}"

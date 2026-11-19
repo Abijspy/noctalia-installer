@@ -11,7 +11,7 @@ Ready-made configs and an installer for the [Noctalia v5](https://docs.noctalia.
 Works on a **fresh minimal install**, straight from the TTY and even as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/v1.1.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Abijspy/noctalia-installer/v1.1.1/install.sh | bash
 ```
 
 This runs a tagged release, and the configs it downloads come from the same release, so a change on `main` can't break your install halfway. To see what it would do first, add `-s -- --dry-run` after `bash`.
@@ -19,7 +19,7 @@ This runs a tagged release, and the configs it downloads come from the same rele
 Or from a clone:
 
 ```bash
-git clone --branch v1.1.0 https://github.com/Abijspy/noctalia-installer.git
+git clone --branch v1.1.1 https://github.com/Abijspy/noctalia-installer.git
 cd noctalia-installer
 ./install.sh --dry-run   # optional: list every package and file, change nothing
 ./install.sh
