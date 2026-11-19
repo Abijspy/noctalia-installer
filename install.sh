@@ -37,6 +37,7 @@
 #    --no-fonts                       # don't install Inter and JetBrains Mono Nerd Font
 #    --no-user-dirs                   # don't create Documents, Downloads, Music, …
 #    --flathub                        # install Flatpak and add Flathub
+#    --no-avatar                      # don't use Noctalia's owl as your profile picture
 #    --scale=auto|1|1.25|1.5|1.75|2|none
 #                                     # display scale (auto: per display, from its size); none: don't touch displays
 #    --variant=intl                   # keyboard layout variant(s), comma separated like --layout
@@ -91,6 +92,7 @@ DARK_APPS=1
 FONTS=1
 USER_DIRS=1
 FLATHUB=0
+AVATAR=1
 SCALE="auto"
 KB_VARIANT=""
 KB_SWITCH="alt-shift"
@@ -121,6 +123,7 @@ for arg in "$@"; do
         --no-fonts)        FONTS=0 ;;
         --no-user-dirs)    USER_DIRS=0 ;;
         --flathub)         FLATHUB=1 ;;
+        --no-avatar)       AVATAR=0 ;;
         --scale=*)         SCALE="${arg#*=}" ;;
         --variant=*)       KB_VARIANT="${arg#*=}" ;;
         --switch-key=*)    KB_SWITCH="${arg#*=}" ;;
@@ -415,6 +418,7 @@ pkgs() {
             dconf) echo gnome-base/dconf ;;              ui-font) echo media-fonts/inter ;;
             user-dirs) echo x11-misc/xdg-user-dirs ;;    flatpak) echo sys-apps/flatpak ;;
             xz) echo app-arch/xz-utils ;;                wlr-randr) echo gui-apps/wlr-randr ;;
+            accounts) echo sys-apps/accountsservice ;;
             *) echo "" ;;
         esac
         return
@@ -467,6 +471,7 @@ pkgs() {
         debian:xz)         echo xz-utils ;;
         *:xz)              echo xz ;;
         *:wlr-randr)       echo wlr-randr ;;
+        *:accounts)        echo accountsservice ;;
         *)                 echo "$g" ;;   # apps share their names across distributions
     esac
 }
@@ -1382,19 +1387,21 @@ p_look() {
         "App theme|dark GTK and Qt apps in the theme's colours · icons · cursor|apptheme"
         "Fonts|Inter for the interface · JetBrains Mono Nerd Font|fonts"
         "Folders|Documents, Downloads, Music, Pictures, Videos…|dirs"
+        "Profile picture|Noctalia's owl · keeps a picture you already have|avatar"
     ) ticked=""
     [[ $CONFIGS_ONLY -eq 0 ]] && opts+=("Flathub|Flatpak apps from flathub.org|flathub")
     [[ $DARK_APPS -eq 1 ]] && ticked+="apptheme "
     [[ $FONTS -eq 1 ]] && ticked+="fonts "
     [[ $USER_DIRS -eq 1 ]] && ticked+="dirs "
+    [[ $AVATAR -eq 1 ]] && ticked+="avatar "
     [[ $FLATHUB -eq 1 ]] && ticked+="flathub "
     screen "Extras" "Finishing touches" "So apps match the desktop from the first login."
     nav_footer "space" "toggle" "enter" "continue"
     checklist 9 "$ticked" 0 "${opts[@]}" || return 2
-    DARK_APPS=0; FONTS=0; USER_DIRS=0; FLATHUB=0
+    DARK_APPS=0; FONTS=0; USER_DIRS=0; FLATHUB=0; AVATAR=0
     local v
     for v in $ANSWER; do
-        case $v in apptheme) DARK_APPS=1 ;; fonts) FONTS=1 ;; dirs) USER_DIRS=1 ;; flathub) FLATHUB=1 ;; esac
+        case $v in apptheme) DARK_APPS=1 ;; fonts) FONTS=1 ;; dirs) USER_DIRS=1 ;; flathub) FLATHUB=1 ;; avatar) AVATAR=1 ;; esac
     done
 }
 switch_label() {
@@ -1678,6 +1685,7 @@ collect_packages() {
     if [[ $FONTS -eq 1 ]]; then for g in ui-font nerd-font xz; do addp PK_OPTIONAL "$(pkgs "$g")"; done; fi
     [[ $USER_DIRS -eq 1 ]] && addp PK_OPTIONAL "$(pkgs user-dirs)"
     [[ $FLATHUB -eq 1 ]] && addp PK_OPTIONAL "$(pkgs flatpak)"
+    [[ $AVATAR -eq 1 ]] && addp PK_OPTIONAL "$(pkgs accounts)"
     has_comp labwc && outputs_on && addp PK_OPTIONAL "$(pkgs wlr-randr)"
 
     # Debian trixie: the greeter and Umbriel come from trixie-backports.
@@ -1970,6 +1978,48 @@ luciole_portal() {
     ok "Luciole is the Open/Save file picker (from your next login)"
 }
 
+# ---------- profile picture: Noctalia's owl, unless you have one ----------
+# Noctalia (and the greeter) show the AccountsService icon when
+# [shell] avatar_path is empty, so that's where the owl goes; ~/.face too,
+# for other apps. Without AccountsService, avatar_path points at ~/.face.
+AVATAR_TOML=""
+set_avatar() {
+    AVATAR_TOML=""
+    [[ $AVATAR -eq 1 ]] || return 0
+    local src="$TMP_DIR/noctalia-avatar.png" face="$TARGET_HOME/.face"
+    local adir=/var/lib/AccountsService ufile icon cur=""
+    get_cfg avatar/noctalia.png "$src"
+    ufile="$adir/users/$TARGET_USER"; icon="$adir/icons/$TARGET_USER"
+    cur="$(as_root sed -n 's/^Icon=//p' "$ufile" 2>/dev/null | head -n1)" || cur=""
+    # Keep a picture the user already has (one we put there before doesn't count).
+    if [[ -n $cur ]] && as_root test -s "$cur" && ! as_root cmp -s "$cur" "$src"; then
+        ok "Keeping your profile picture ($cur)"; return 0
+    fi
+    if [[ -s $face ]] && ! cmp -s "$face" "$src"; then
+        ok "Keeping your profile picture (~/.face)"; return 0
+    fi
+    place_user_file "$src" "$face"
+    if [[ -d $adir ]] && as_root mkdir -p "$adir/icons" "$adir/users" 2>/dev/null; then
+        as_root test -e "$icon" || rec sysfile "$icon"
+        as_root install -m 644 "$src" "$icon"
+        local ubak="-"
+        if as_root test -f "$ufile"; then
+            ubak="$ufile.bak.$(date +%Y%m%d-%H%M%S)"; as_root cp -p "$ufile" "$ubak"
+        fi
+        rec sysrestore "$ufile" "$ubak"
+        {
+            if as_root test -f "$ufile"; then as_root grep -v '^Icon=' "$ufile"; else echo "[User]"; fi
+        } | awk -v icon="Icon=$icon" '{ print } $0 == "[User]" && !done { print icon; done = 1 } END { if (!done) { print "[User]"; print icon } }' \
+            > "$TMP_DIR/accounts-user"
+        as_root install -m 600 "$TMP_DIR/accounts-user" "$ufile"
+        ok "Profile picture: Noctalia's owl (shows in Noctalia and on the login screen after a reboot)"
+    else
+        # shellcheck disable=SC2088  # written literally into the TOML; Noctalia expands it
+        AVATAR_TOML="~/.face"
+        ok "Profile picture: Noctalia's owl (~/.face)"
+    fi
+}
+
 # ---------- --dry-run: show the plan, change nothing ----------
 planned_files() {  # every file the install would write, one per line
     local c
@@ -2041,6 +2091,7 @@ print_plan() {
     [[ $DARK_APPS -eq 1 ]] && echo "  • dark GTK and Qt apps: adw-gtk3, Papirus icons, Adwaita cursor, qt6ct"
     [[ $FONTS -eq 1 ]] && echo "  • fonts: Inter for the interface, JetBrains Mono Nerd Font for terminals"
     [[ $USER_DIRS -eq 1 ]] && echo "  • create Documents, Downloads, Music, Pictures, Videos…"
+    [[ $AVATAR -eq 1 ]] && echo "  • use Noctalia's owl as the profile picture, unless one is already set (~/.face and AccountsService)"
     if [[ $INSTALL_APPS -eq 1 && $FM_APP == luciole ]]; then
         local pc pn; for pc in "${COMPS[@]}"; do pn="$(portal_desktop "$pc")"
             [[ -n $pn ]] && echo "  • make Luciole the Open/Save file picker on $(comp_field "$pc" 2) ($CONFIG_HOME/xdg-desktop-portal/$pn-portals.conf)"
@@ -2088,7 +2139,7 @@ do_uninstall() {
         case $kind in
             file|moved|sysfile) key="$kind:$a" ;;
             greetd|kde_blur|kde_rule|flathub) key=$kind ;;
-            userdir|gsetting) key="$kind:$a" ;;
+            userdir|gsetting|sysrestore) key="$kind:$a" ;;
             dm_disabled|enabled) key="$kind:$a" ;;
             *) continue ;;
         esac
@@ -2112,6 +2163,7 @@ do_uninstall() {
             kde_blur) echo "  • set KWin's blur back to how it was" ;;
             kde_rule) echo "  • remove the KWin rule for Noctalia settings" ;;
             userdir) echo "  • remove $a" ;;
+            sysrestore) if [[ $b == - ]]; then echo "  • remove $a"; else echo "  • restore $a from its backup"; fi ;;
             gsetting) echo "  • set the $a setting back to $b" ;;
             flathub) echo "  • leave Flathub set up (remove it with: sudo flatpak remote-delete flathub)" ;;
         esac
@@ -2143,6 +2195,10 @@ do_uninstall() {
             enabled) as_root systemctl disable "$a" && ok "Disabled $a" ;;
             kde_blur|kde_rule) undo_kde "$kind" "$a" ;;
             userdir) rm -rf -- "$a" && ok "Removed $a" ;;
+            sysrestore)
+                if [[ $b == - ]]; then as_root rm -f "$a" && ok "Removed $a"
+                elif as_root test -f "$b"; then as_root cp -p "$b" "$a" && ok "Restored $a"
+                else warn "Backup $b is gone; left $a as it is"; fi ;;
             gsetting)
                 if command -v gsettings >/dev/null && command -v dbus-run-session >/dev/null; then
                     as_user dbus-run-session -- gsettings set org.gnome.desktop.interface "$a" "$b" 2>/dev/null \
@@ -2753,6 +2809,7 @@ run_steps() {
     for c in "${COMPS[@]}"; do write_comp_config "$c"; done
     luciole_portal
 
+    set_avatar
     local toml="$TMP_DIR/10-installer.toml"
     {
         echo "# Written by noctalia-installer/install.sh"
@@ -2766,6 +2823,7 @@ run_steps() {
             echo "umbriel_overview_close_on_launch_enabled = true"
         fi
         [[ $POLKIT_AGENT -eq 1 ]] && echo "polkit_agent = true"
+        [[ -n $AVATAR_TOML ]] && echo "avatar_path = \"$AVATAR_TOML\""
         true
     } > "$toml"
     # Older versions of this installer wrote 10-niri.toml; replace it.

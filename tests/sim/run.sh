@@ -33,7 +33,7 @@ bad()  {
 check() { local d=$1; shift; if "$@"; then ok "$d"; else bad "$d"; fi; }
 
 reset() {
-    rm -rf "$TH/.config" "$TH/.local/state/noctalia-installer" "$TH/Pictures/Wallpapers"
+    rm -rf "$TH/.config" "$TH/.local/state/noctalia-installer" "$TH/Pictures/Wallpapers" "$TH/.face"
     rm -f "$BIN/paru" "$BIN/yay" /etc/modprobe.d/90-noctalia-nvidia.conf \
           /etc/nvidia/nvidia-application-profiles-rc.d/50-noctalia-niri-vram.json \
           /etc/systemd/logind.conf.d/10-noctalia-lid.conf
@@ -112,6 +112,7 @@ mkdir -p "$TH/.config/niri"; echo "// MINE" > "$TH/.config/niri/config.kdl"; cho
 run arch --yes --no-tui --compositors=niri --no-greeter --no-services
 check "installed over it" grep -q 'noctalia' "$TH/.config/niri/config.kdl"
 check "Luciole is the default file manager on Arch" called 'luciole-git'
+check "Noctalia's owl is the profile picture" cmp -s "$TH/.face" "$REPO/configs/avatar/noctalia.png"
 check "Mod+E opens Luciole" grep -q 'spawn "luciole"' "$TH/.config/niri/config.kdl"
 check "Luciole is the file picker on niri" grep -q '^org.freedesktop.impl.portal.FileChooser=luciole;gnome;gtk;' "$TH/.config/xdg-desktop-portal/niri-portals.conf"
 run arch --yes --no-tui --compositors=niri --no-greeter --no-services          # a second run backs up our own file
@@ -127,6 +128,14 @@ check "sway env is empty" grep -qx 'set \$env env' "$TH/.config/sway/config"
 check "no display blocks" bash -c "! grep -q '^output ' '$TH/.config/niri/config.kdl'"
 check "templates without gtk/qt" bash -c "! grep -q gtk3 '$TH/.config/noctalia/40-theme.toml'"
 run arch --uninstall --yes
+
+echo "== A profile picture you already have stays"
+reset
+echo mine > "$TH/.face"; chown tester: "$TH/.face"
+run arch --yes --no-tui --compositors=niri --no-greeter --no-services
+check "keeps ~/.face" grep -qx mine "$TH/.face"
+check "says so" grep -q 'Keeping your profile picture' <<< "$OUT"
+rm -f "$TH/.face"
 
 echo "== Dry run changes nothing"
 reset

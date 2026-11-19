@@ -71,7 +71,7 @@ On other distributions, compositors your distribution doesn't package are greyed
    - keep yay or paru if one is already installed, install **paru** or **yay**, or skip it;
    - Scroll and Umbriel are only in the AUR, so they need a helper.
 
-   Then the **colour theme** (see [Themes and app looks](#themes-and-app-looks)) and the **finishing touches**: dark app theme, fonts, standard folders and Flathub.
+   Then the **colour theme** (see [Themes and app looks](#themes-and-app-looks)) and the **finishing touches**: dark app theme, fonts, standard folders, profile picture and Flathub.
 5. **Apps:**
    - terminal: alacritty, kitty, foot, ghostty or wezterm;
    - file manager: Luciole (the default on Arch), 10 other graphical and 5 terminal file managers, or none (see [File managers](#file-managers));
@@ -296,6 +296,8 @@ With *from your wallpaper*, all of it changes whenever you pick a new wallpaper.
 
 **Folders** (`--no-user-dirs` to skip): `xdg-user-dirs` creates Documents, Downloads, Music, Pictures, Videos and the rest, in your language.
 
+**Profile picture** (`--no-avatar` to skip): Noctalia's owl becomes your avatar in Noctalia's launcher and Control Center and on the Noctalia Greeter login screen. It's set through AccountsService (`/var/lib/AccountsService/icons/<user>`), which Noctalia reads when no `avatar_path` is set, and as `~/.face` for other apps. Without AccountsService, `avatar_path` points at `~/.face`. A picture you already have is kept, and you can change it any time in Noctalia's settings. The image is the Noctalia logo (MIT, © noctalia-dev) on a dark background, in `configs/avatar/noctalia.png`.
+
 **Flathub** (`--flathub`, off by default): installs Flatpak and adds Flathub for the whole system, plus the adw-gtk3 theme for Flatpak apps.
 
 ## Displays
@@ -367,6 +369,7 @@ Packages stay installed; it prints the list so you can remove them yourself. Fil
 | `--no-fonts` | Don't install Inter and JetBrains Mono Nerd Font |
 | `--no-user-dirs` | Don't create Documents, Downloads, … |
 | `--flathub` | Install Flatpak and add Flathub |
+| `--no-avatar` | Don't use Noctalia's owl as your profile picture |
 | `--scale=…` | `auto` (per display), `1` `1.25` `1.5` `1.75` `2`, or `none` to leave displays alone |
 | `--variant=…` | Keyboard layout variant(s), comma separated like `--layout`, e.g. `intl` or `intl,` |
 | `--switch-key=…` | Key that switches layouts: `alt-shift` (default) `ctrl-shift` `caps` `ralt` `menu` |
